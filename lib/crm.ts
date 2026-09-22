@@ -10,6 +10,7 @@ const money=z.number().finite().min(0).max(1e10);
 const base={id:z.string().min(1),demo:z.boolean().default(false)};
 const line=z.object({description:name,quantity:z.number().positive().max(1e6),price:money,policy:z.enum(['fixed','milestones','hours']),tasks:z.string().trim().min(1,'Añade al menos una tarea de entrega').max(5000)});
 export const leadStatuses = ['Nuevo','Contactado','Cualificado','Convertido','Descartado'] as const;
+export const taskStatuses = ['Por hacer','En curso','Hecho'] as const;
 export const leadSources = ['Web','Referencia','Outbound','Evento','Otro'] as const;
 export const schemas={
  leads:z.object({...base,name,contact:z.string().max(200),email:z.string().email('El correo no es válido').or(z.literal('')),phone:z.string().max(100),source:z.enum(leadSources),status:z.enum(leadStatuses),notes:z.string().max(3000),nextDate:date.or(z.literal('')),createdAt:date,convertedCompanyId:z.string().optional(),convertedOpportunityId:z.string().optional()}),
@@ -19,8 +20,8 @@ export const schemas={
  followups:z.object({...base,opportunityId:name,title:name,dueDate:date,done:z.boolean()}),
  quotes:z.object({...base,opportunityId:name,title:name,lines:z.array(line).min(1).max(100)}),
  orders:z.object({...base,quoteId:name,title:name,lines:z.array(line).min(1).max(100),confirmed:z.boolean()}),
- projects:z.object({...base,orderId:name,title:name}),
- delivery:z.object({...base,projectId:name,lineIndex:z.number().int().min(0),title:name,done:z.boolean()}),
+ projects:z.object({...base,orderId:z.string().max(80).default(''),title:name,body:z.string().max(2000).default('')}),
+ delivery:z.object({...base,projectId:name,lineIndex:z.number().int().min(0).default(0),title:name,done:z.boolean(),status:z.enum(taskStatuses).default('Por hacer'),assignee:z.string().max(120).default(''),startDate:date.or(z.literal('')).default(''),dueDate:date.or(z.literal('')).default('')}),
  hours:z.object({...base,taskId:name,date,hours:z.number().positive().max(24),cost:money,notes:z.string().max(500)}),
  invoices:z.object({...base,orderId:name,title:name,date,dueDate:date,amount:money,policy:z.enum(['fixed','milestones','hours']),hourIds:z.array(z.string()),paid:z.boolean()}),
  payments:z.object({...base,invoiceId:name,date,amount:money})
@@ -29,7 +30,7 @@ export type Kind=keyof typeof schemas;
 export type Entity={ [K in Kind]:z.infer<typeof schemas[K]> };
 export type State={ [K in Kind]:Entity[K][] };
 export const emptyState=():State=>Object.fromEntries(Object.keys(schemas).map(k=>[k,[]])) as unknown as State;
-export function ensureState(input:State):State{const state=structuredClone({...emptyState(),...input,leads:input.leads??[]}) as State;for(const opportunity of state.opportunities){const stage=legacyStages[(opportunity as {stage:string}).stage];if(stage)opportunity.stage=stage}return state}
+export function ensureState(input:State):State{const state=structuredClone({...emptyState(),...input,leads:input.leads??[]}) as State;for(const opportunity of state.opportunities){const stage=legacyStages[(opportunity as {stage:string}).stage];if(stage)opportunity.stage=stage}for(const project of state.projects){const row=project as Entity['projects']&{orderId?:string;body?:string};row.orderId=row.orderId||'';row.body=row.body??''}for(const task of state.delivery){const row=task as Entity['delivery']&{status?:string;assignee?:string;startDate?:string;dueDate?:string};if(!row.status||!taskStatuses.includes(row.status as (typeof taskStatuses)[number]))row.status=row.done?'Hecho':'Por hacer';row.assignee=row.assignee??'';row.startDate=row.startDate||'';row.dueDate=row.dueDate||'';row.done=row.status==='Hecho'}return state}
 export const total=(lines:Entity['quotes']['lines'])=>Math.round(lines.reduce((s,l)=>s+l.quantity*l.price,0)*100)/100;
 export const round=(n:number)=>Math.round(n*100)/100;
 export const eur=(n:number)=>new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(n);
@@ -53,7 +54,7 @@ export function apply(s0:State,cmd:Command):State{
  const s=structuredClone(ensureState(s0));const id=()=>crypto.randomUUID();
  if(cmd.action==='save'){
   const k=cmd.kind;if(!k||!schemas[k])fail('Tipo de registro no válido');
-  if(['projects','invoices','payments'].includes(k!))fail('Usa la acción específica para este registro');
+  if(['invoices','payments'].includes(k!))fail('Usa la acción específica para este registro');
   const r=schemas[k!].parse(cmd.record) as any;
   const old=(s[k!] as any[]).find(x=>x.id===r.id);r.demo=old?.demo??false;
   if(!old){if(k==='opportunities'||k==='interactions')r.demo=get(s,'companies',r.companyId).demo;if(k==='followups'||k==='quotes')r.demo=get(s,'opportunities',r.opportunityId).demo;if(k==='orders')r.demo=get(s,'quotes',r.quoteId).demo;if(k==='delivery')r.demo=get(s,'projects',r.projectId).demo;if(k==='hours')r.demo=get(s,'delivery',r.taskId).demo}
@@ -63,7 +64,8 @@ export function apply(s0:State,cmd:Command):State{
   if(k==='followups')get(s,'opportunities',r.opportunityId);
   if(k==='quotes'){get(s,'opportunities',r.opportunityId);if(s.orders.some(o=>o.quoteId===r.id))fail('Este presupuesto ya tiene un pedido. Edita el pedido si aún es borrador')}
   if(k==='orders'){get(s,'quotes',r.quoteId);if(old?.confirmed){if(r.quoteId!==old.quoteId||JSON.stringify(r.lines)!==JSON.stringify(old.lines))fail('Las líneas de un pedido confirmado quedan bloqueadas para conservar sus facturas y horas');r.confirmed=true;const project=s.projects.find(p=>p.orderId===r.id);if(project)project.title=r.title}else r.confirmed=false;if(s.orders.some(o=>o.quoteId===r.quoteId&&o.id!==r.id))fail('Este presupuesto ya tiene un pedido')}
-  if(k==='delivery'){const p=get(s,'projects',r.projectId);const o=get(s,'orders',p.orderId);if(r.lineIndex>=o.lines.length)fail('Línea de pedido no válida');if(old&&(r.projectId!==old.projectId||r.lineIndex!==old.lineIndex)&&s.hours.some(h=>h.taskId===r.id))fail('No puedes mover una tarea con horas imputadas')}
+  if(k==='projects'){if(r.orderId&&!s.orders.some(o=>o.id===r.orderId))fail('El pedido no existe');if(old?.orderId&&r.orderId!==old.orderId)fail('Este proyecto sigue ligado a su pedido');if(!old&&r.orderId&&s.projects.some(p=>p.orderId===r.orderId))fail('Ese pedido ya tiene un proyecto')}
+  if(k==='delivery'){const p=get(s,'projects',r.projectId);if(p.orderId){const o=get(s,'orders',p.orderId);if(r.lineIndex>=o.lines.length)fail('Línea de pedido no válida')}else r.lineIndex=0;r.done=r.status==='Hecho';if(r.startDate&&r.dueDate&&r.startDate>r.dueDate)fail('La fecha objetivo no puede ser anterior al inicio');if(old&&(r.projectId!==old.projectId||r.lineIndex!==old.lineIndex)&&s.hours.some(h=>h.taskId===r.id))fail('No puedes mover una tarea con horas imputadas')}
   if(k==='hours'){get(s,'delivery',r.taskId);if(s.invoices.some(i=>i.hourIds.includes(r.id)))fail('Estas horas ya están facturadas');if(r.date>today())fail('No puedes imputar horas futuras')}
   (s[k!] as any[])=(s[k!] as any[]).filter(x=>x.id!==r.id).concat(r);
  }else if(cmd.action==='convertLead'){
@@ -84,8 +86,8 @@ export function apply(s0:State,cmd:Command):State{
   const q=get(s,'quotes',cmd.id!);let o=s.orders.find(o=>o.quoteId===q.id);
   if(o?.confirmed)fail('El pedido ya está confirmado');
   if(!o){o={id:id(),demo:q.demo,quoteId:q.id,title:q.title,lines:structuredClone(q.lines),confirmed:false};s.orders.push(o)}
-  o.confirmed=true;const p={id:id(),demo:o.demo,orderId:o.id,title:o.title};s.projects.push(p);
-  o.lines.forEach((l,n)=>l.tasks.split('\n').map(x=>x.trim()).filter(Boolean).forEach(title=>s.delivery.push({id:id(),demo:o!.demo,projectId:p.id,lineIndex:n,title,done:false})));
+  o.confirmed=true;const p={id:id(),demo:o.demo,orderId:o.id,title:o.title,body:''};s.projects.push(p);
+  o.lines.forEach((l,n)=>l.tasks.split('\n').map(x=>x.trim()).filter(Boolean).forEach(title=>s.delivery.push({id:id(),demo:o!.demo,projectId:p.id,lineIndex:n,title,done:false,status:'Por hacer',assignee:'',startDate:'',dueDate:''})));
   get(s,'opportunities',q.opportunityId).stage='Ganada';
  }else if(cmd.action==='invoice'){
   const o=get(s,'orders',cmd.id!);if(!o.confirmed)fail('Confirma el pedido antes de facturar');
@@ -136,6 +138,6 @@ export function seed():State{
  s.interactions.push(...[-18,-10,-4].map((n,i)=>({id:'demo-contact-'+i,demo,companyId:'demo-company',opportunityId:'demo-opportunity',kind:['Llamada','Reunión','Email'][i] as Entity['interactions']['kind'],date:dateOffset(n),notes:['Primera conversación sobre las necesidades de la empresa.','Revisamos el alcance de la segunda fase y las fechas.','Propuesta enviada. Pendiente de revisar condiciones.'][i]})));
  s.followups.push({id:'demo-followup',demo,opportunityId:'demo-opportunity',title:'Llamar para revisar la propuesta',dueDate:dateOffset(-2),done:false});
  s.quotes.push({id:'demo-quote',demo,opportunityId:'demo-won',title:'P-001 · Servicio a medida',lines:[{description:'Servicio a medida · primera fase',quantity:1,price:2400,policy:'fixed',tasks:'Preparación\nEjecución\nEntrega y revisión'}]});
- const withOrder=apply(s,{action:'confirm',id:'demo-quote'});const task=withOrder.delivery[0];withOrder.hours.push({id:'demo-hours',demo,taskId:task.id,date:dateOffset(-1),hours:4,cost:35,notes:'Preparación de la primera entrega'});
+ const withOrder=apply(s,{action:'confirm',id:'demo-quote'});const plan=[[-20,-12,'Hecho'],[-6,4,'En curso'],[5,18,'Por hacer']] as const;withOrder.delivery.forEach((task,index)=>{const [from,to,status]=plan[index]??[0,7,'Por hacer'];task.startDate=dateOffset(from);task.dueDate=dateOffset(to);task.status=status;task.done=status==='Hecho'});const task=withOrder.delivery[0];withOrder.hours.push({id:'demo-hours',demo,taskId:task.id,date:dateOffset(-1),hours:4,cost:35,notes:'Preparación de la primera entrega'});
  return apply(withOrder,{action:'invoice',id:withOrder.orders[0].id,policy:'fixed',title:'F-001 · Servicio a medida',date:today(),dueDate:dateOffset(30)});
 }
