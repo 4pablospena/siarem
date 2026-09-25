@@ -1,5 +1,7 @@
-import {risk,total,projectCost,companyForOrder,today,type State} from './crm.ts';
-export function csvExport(s:State,view:string,query='',filter='all',companyFilter='all'){
+import { projectTasks } from './project-tasks.ts';
+import {risk,total,projectCost,companyForOrder,today,ensureState,type State} from './crm.ts';
+export function csvExport(s:State,view:string,query='',filter='all',companyFilter='all',projectId=''){
+ s=ensureState(s);
  const normalize=(v:string)=>v.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
  const match=(...v:unknown[])=>normalize(v.join(' ')).includes(normalize(query));
  const company=(id?:string)=>s.companies.find(c=>c.id===id);
@@ -15,6 +17,9 @@ export function csvExport(s:State,view:string,query='',filter='all',companyFilte
  const quotes=s.quotes.filter(q=>{const o=s.opportunities.find(o=>o.id===q.opportunityId);return scoped(o?.companyId)&&match(q.title,company(o?.companyId)?.name)});
  const orders=s.orders.filter(o=>scoped(companyForOrder(s,o.id))&&match(o.title,company(companyForOrder(s,o.id))?.name));
  rows=[['Tipo','Documento','Empresa','Importe EUR','Estado'],...(filter==='orders'?[]:quotes.map(q=>['Presupuesto',q.title,company(s.opportunities.find(o=>o.id===q.opportunityId)?.companyId)?.name,total(q.lines),s.orders.some(o=>o.quoteId===q.id&&o.confirmed)?'Confirmado':'Pendiente'])),...(filter==='quotes'?[]:orders.map(o=>['Pedido',o.title,company(companyForOrder(s,o.id))?.name,total(o.lines),o.confirmed?'Confirmado':'Borrador']))];
+ }else if(view==='Proyectos'&&projectId){
+ const project=s.projects.find(p=>p.id===projectId);if(!project)throw new Error('El proyecto no existe');
+ rows=[['Proyecto','Tarea','Estado','Responsable','Inicio','Fecha objetivo'],...projectTasks(s,projectId,query,filter).map(t=>[project.title,t.title,t.status,t.assignee,t.startDate,t.dueDate])];
  }else if(view==='Proyectos')rows=[['Proyecto','Empresa','Pedido EUR','Coste horas EUR','Margen EUR'],...s.projects.filter(p=>scoped(companyForOrder(s,p.orderId))&&match(p.title,p.body,company(companyForOrder(s,p.orderId))?.name)).map(p=>{const o=s.orders.find(o=>o.id===p.orderId);const cost=projectCost(s,p.id);return[p.title,o?company(companyForOrder(s,o.id))?.name:'',o?total(o.lines):'',cost,o?total(o.lines)-cost:'']})];
  else if(view==='Facturas')rows=[['Factura','Empresa','Fecha','Vencimiento','Importe EUR','Estado'],...s.invoices.filter(i=>scoped(companyForOrder(s,i.orderId))&&match(i.title,company(companyForOrder(s,i.orderId))?.name)&&(filter==='all'||(filter==='paid'?i.paid:!i.paid))).map(i=>[i.title,company(companyForOrder(s,i.orderId))?.name,i.date,i.dueDate,i.amount,i.paid?'Cobrada':'Pendiente'])];
  else throw new Error('Pantalla no válida');

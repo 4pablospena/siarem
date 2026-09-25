@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Send, X } from 'lucide-react';
+import { Sheet,SheetContent,SheetTitle,SheetDescription } from '@/components/ui/sheet';
 import { eur, risk, today, type State } from '@/lib/crm';
 
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
@@ -30,7 +31,7 @@ export function hermesBrief(view: string, state: State) {
   return lines.join('\n').slice(0, 6000);
 }
 
-export function HermesPanel({ open, context, onClose }: { open: boolean; context: string; onClose: () => void }) {
+export function HermesPanel({ open, context, onClose, onRestoreFocus }: { open: boolean; context: string; onClose: () => void; onRestoreFocus: () => void }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
@@ -94,20 +95,18 @@ export function HermesPanel({ open, context, onClose }: { open: boolean; context
     }
   }
 
-  if (!open) return null;
-
   return (
-    <aside className="hermes-panel" role="dialog" aria-label="Hermes">
+    <Sheet open={open} onOpenChange={value=>{if(!value)onClose()}}><SheetContent onCloseAutoFocus={event=>{event.preventDefault();onRestoreFocus()}} side="right" showCloseButton={false} className="hermes-panel">
       <header>
         <div>
-          <strong>Hermes</strong>
-          <small>Te ayuda con el siguiente paso</small>
+          <SheetTitle>Hermes</SheetTitle>
+          <SheetDescription>Te ayuda con el siguiente paso</SheetDescription>
         </div>
         <button type="button" aria-label="Cerrar Hermes" onClick={onClose}>
           <X size={16} />
         </button>
       </header>
-      <div className="hermes-log">
+      <div className="hermes-log" role="log" aria-live="polite" aria-label="Conversación con Hermes">
         {messages.length === 0 && <p className="hermes-empty">Pregúntame qué hacer con los leads, las oportunidades, un mensaje o un cobro. Miro lo que tienes ahora en Siarem.</p>}
         {messages.map((item, index) => (
           <article key={`${item.role}-${index}`} className={item.role === 'user' ? 'hermes-user' : 'hermes-assistant'}>
@@ -141,6 +140,6 @@ export function HermesPanel({ open, context, onClose }: { open: boolean; context
           <Send size={16} />
         </button>
       </form>
-    </aside>
+    </SheetContent></Sheet>
   );
 }
