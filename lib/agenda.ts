@@ -2,8 +2,10 @@ import { today, companyForOrder, ensureState, type State } from './crm.ts';
 import { isOpenOpportunity } from './pipeline.ts';
 import { stageName } from './pipeline-stages.ts';
 import { isIssued } from './invoices.ts';
+import { isPurchaseRecorded } from './purchases.ts';
+import { isContractActive } from './contracts.ts';
 
-export type AgendaKind = 'followup' | 'close' | 'interaction' | 'invoice' | 'task';
+export type AgendaKind = 'followup' | 'close' | 'interaction' | 'invoice' | 'task' | 'purchase' | 'contract' | 'recurring';
 
 export type AgendaItem = {
   id: string;
@@ -14,6 +16,9 @@ export type AgendaItem = {
   companyId?: string;
   opportunityId?: string;
   invoiceId?: string;
+  purchaseId?: string;
+  contractId?: string;
+  recurringId?: string;
   taskId?: string;
   projectId?: string;
 };
@@ -89,6 +94,42 @@ export function agendaWeek(input: State, anchor = today()): { range: ReturnType<
       detail: String(inv.amount),
       companyId: companyForOrder(s, inv.orderId),
       invoiceId: inv.id,
+    });
+  }
+
+  for (const purchase of (s.purchases || []).filter(x => isPurchaseRecorded(x) && !x.paid && (inWeek(x.dueDate) || x.dueDate < range.start))) {
+    items.push({
+      id: `purchase-${purchase.id}`,
+      date: purchase.dueDate < range.start ? range.start : purchase.dueDate,
+      kind: 'purchase',
+      title: (purchase.dueDate < range.start ? 'Pago vencido · ' : 'Vence pago · ') + purchase.title,
+      detail: String(purchase.amount),
+      companyId: purchase.supplierCompanyId,
+      purchaseId: purchase.id,
+      projectId: purchase.projectId || undefined,
+    });
+  }
+
+  for (const contract of (s.contracts || []).filter(c => isContractActive(c) && (inWeek(c.renewalDate) || c.renewalDate < range.start))) {
+    items.push({
+      id: `contract-${contract.id}`,
+      date: contract.renewalDate < range.start ? range.start : contract.renewalDate,
+      kind: 'contract',
+      title: (contract.renewalDate < range.start ? 'Renovación vencida · ' : 'Renovar · ') + contract.title,
+      detail: String(contract.mrr),
+      companyId: contract.companyId,
+      contractId: contract.id,
+    });
+  }
+
+  for (const schedule of (s.recurringInvoices || []).filter(r => r.active && (inWeek(r.nextDate) || r.nextDate < range.start))) {
+    items.push({
+      id: `recurring-${schedule.id}`,
+      date: schedule.nextDate < range.start ? range.start : schedule.nextDate,
+      kind: 'recurring',
+      title: (schedule.nextDate < range.start ? 'Recurrente pendiente · ' : 'Generar factura · ') + (schedule.title || 'Programación'),
+      detail: String(schedule.amount || ''),
+      recurringId: schedule.id,
     });
   }
 

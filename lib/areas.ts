@@ -1,7 +1,7 @@
 import type { LucideIcon } from 'lucide-react';
-import { Crosshair, Columns3, Building2, FileText, FolderKanban, Inbox, ChartColumn } from 'lucide-react';
+import { Crosshair, Columns3, Building2, FileText, FolderKanban, Inbox, ChartColumn, ScanText } from 'lucide-react';
 
-export type AreaView = 'Foco' | 'Agenda' | 'Informes' | 'Leads' | 'Pipeline' | 'Empresas' | 'Catálogo' | 'Ventas' | 'Proyectos' | 'Facturas';
+export type AreaView = 'Foco' | 'Agenda' | 'Informes' | 'Leads' | 'Pipeline' | 'Empresas' | 'Catálogo' | 'Contratos' | 'Ventas' | 'Facturas' | 'Gastos' | 'OCR' | 'Proyectos';
 
 export type Area = {
   name: string;
@@ -11,7 +11,7 @@ export type Area = {
 };
 
 /**
- * Home areas. Pipeline and Proyectos are first-class modules.
+ * Home areas. Pipeline, Proyectos and OCR are first-class modules.
  * Internal view names stay stable for export and filters.
  */
 export const areas: Area[] = [
@@ -19,8 +19,9 @@ export const areas: Area[] = [
   { name: 'Pipeline', icon: Columns3, views: ['Pipeline'] },
   { name: 'Proyectos', icon: FolderKanban, views: ['Proyectos'] },
   { name: 'Leads', icon: Inbox, views: ['Leads'] },
-  { name: 'Clientes', icon: Building2, views: ['Empresas', 'Catálogo'], labels: { Empresas: 'Empresas', Catálogo: 'Catálogo' } },
-  { name: 'Facturación', icon: FileText, views: ['Ventas', 'Facturas'], labels: { Ventas: 'Presupuestos y pedidos', Facturas: 'Facturas' } },
+  { name: 'Clientes', icon: Building2, views: ['Empresas', 'Catálogo', 'Contratos'], labels: { Empresas: 'Empresas', Catálogo: 'Catálogo', Contratos: 'Contratos' } },
+  { name: 'Facturación', icon: FileText, views: ['Ventas', 'Facturas', 'Gastos'], labels: { Ventas: 'Presupuestos y pedidos', Facturas: 'Facturas', Gastos: 'Gastos' } },
+  { name: 'OCR', icon: ScanText, views: ['OCR'] },
   { name: 'Informes', icon: ChartColumn, views: ['Informes'] },
 ];
 

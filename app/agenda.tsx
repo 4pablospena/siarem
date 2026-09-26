@@ -10,6 +10,9 @@ const kindLabel: Record<AgendaItem['kind'], string> = {
   interaction: 'Interacción',
   invoice: 'Factura',
   task: 'Tarea',
+  purchase: 'Gasto',
+  contract: 'Contrato',
+  recurring: 'Recurrente',
 };
 
 function dayLabel(date: string) {

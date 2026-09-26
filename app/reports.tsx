@@ -38,6 +38,7 @@ export function ReportsView({
           <div><span>Facturado</span><strong>{report.invoicedThisMonth.count}</strong><small>{eur(report.invoicedThisMonth.amount)}</small></div>
           <div><span>Cobrado</span><strong>{report.collectedThisMonth.count}</strong><small>{eur(report.collectedThisMonth.amount)}</small></div>
           <div><span>MRR abierto</span><strong>{eur(report.openMrr)}</strong><small>/ mes</small></div>
+          <div><span>MRR contratos</span><strong>{eur(report.contractMrr)}</strong><small>/ mes</small></div>
           <div><span>Forecast ponderado</span><strong>{eur(report.weightedForecast)}</strong><small>importe × %</small></div>
         </div>
       </section>
@@ -51,6 +52,18 @@ export function ReportsView({
           <div><span>31–60 días</span><strong>{report.aging.d31_60.count}</strong><small>{eur(report.aging.d31_60.amount)}</small></div>
           <div><span>61–90 días</span><strong>{report.aging.d61_90.count}</strong><small>{eur(report.aging.d61_90.amount)}</small></div>
           <div><span>+90 días</span><strong>{report.aging.d90plus.count}</strong><small>{eur(report.aging.d90plus.amount)}</small></div>
+        </div>
+      </section>
+
+      <section className="report-block" aria-labelledby="report-payables">
+        <h2 id="report-payables">Deuda a pagar</h2>
+        <div className="report-stats">
+          <div><span>Pendiente</span><strong>{eur(report.purchaseAging.pending)}</strong></div>
+          <div><span>No vencido</span><strong>{report.purchaseAging.current.count}</strong><small>{eur(report.purchaseAging.current.amount)}</small></div>
+          <div><span>1–30 días</span><strong>{report.purchaseAging.d1_30.count}</strong><small>{eur(report.purchaseAging.d1_30.amount)}</small></div>
+          <div><span>31–60 días</span><strong>{report.purchaseAging.d31_60.count}</strong><small>{eur(report.purchaseAging.d31_60.amount)}</small></div>
+          <div><span>61–90 días</span><strong>{report.purchaseAging.d61_90.count}</strong><small>{eur(report.purchaseAging.d61_90.amount)}</small></div>
+          <div><span>+90 días</span><strong>{report.purchaseAging.d90plus.count}</strong><small>{eur(report.purchaseAging.d90plus.amount)}</small></div>
         </div>
       </section>
 

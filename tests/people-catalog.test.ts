@@ -4,7 +4,7 @@ import { seed, apply, ensureState, emptyState } from '../lib/crm.ts';
 
 test('company contact migrates to a primary person once', () => {
   const state = emptyState();
-  state.companies.push({ id: 'c1', demo: false, name: 'Acme', email: 'a@x.com', contact: 'Ana', phone: '600', contactDays: 30, taxId: '', address: '', paymentDays: 30 });
+  state.companies.push({ id: 'c1', demo: false, name: 'Acme', email: 'a@x.com', contact: 'Ana', phone: '600', contactDays: 30, taxId: '', address: '', paymentDays: 30, companyRole: 'client' });
   const next = ensureState(state);
   assert.equal(next.people.length, 1);
   assert.equal(next.people[0].name, 'Ana');

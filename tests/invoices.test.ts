@@ -8,7 +8,7 @@ import {
 function fixture() {
   let s = emptyState();
   const save = (kind: string, record: unknown) => { s = apply(s, { action: 'save', kind, record } as Command); };
-  save('companies', { id: 'c', demo: false, name: 'Cliente', contact: '', email: 'c@example.com', phone: '', contactDays: 30, taxId: 'B1', address: 'Calle 1', paymentDays: 30 });
+  save('companies', { id: 'c', demo: false, name: 'Cliente', contact: '', email: 'c@example.com', phone: '', contactDays: 30, taxId: 'B1', address: 'Calle 1', paymentDays: 30, companyRole: 'client' });
   save('opportunities', { id: 'o', demo: false, companyId: 'c', title: 'Servicio', amount: 1000, stageId: 'stage-cualificacion', closeDate: dateOffset(5), nextStep: '', nextDate: '', createdAt: today(), tagIds: [], mrr: null, ownerUserId: '', lostReasonId: '', rank: 0, stageHistory: [] });
   save('quotes', { id: 'q', demo: false, opportunityId: 'o', title: 'Oferta', lines: [
     { description: 'Fijo', quantity: 1, price: 1000, policy: 'fixed', tasks: 'Preparar\nEntregar' },

@@ -15,6 +15,9 @@ const weekKind: Record<AgendaItem['kind'], string> = {
   interaction: 'Interacción',
   invoice: 'Factura',
   task: 'Tarea',
+  purchase: 'Gasto',
+  contract: 'Contrato',
+  recurring: 'Recurrente',
 };
 
 export function TodayView({
