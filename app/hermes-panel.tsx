@@ -122,8 +122,8 @@ export function HermesPanel({ open, context, onClose, onRestoreFocus }: { open: 
       {error && <p className="error" role="alert">{error}</p>}
       {needsKey && (
         <label className="field hermes-key">
-          <span>Clave local de Hermes</span>
-          <input type="password" value={key} autoComplete="off" onChange={(event) => setKey(event.target.value)} />
+          <span>Clave de Hermes</span>
+          <input type="password" name="hermes-key" value={key} autoComplete="off" autoCorrect="off" spellCheck={false} aria-label="Clave de Hermes, oculta" onChange={(event) => setKey(event.target.value)} />
         </label>
       )}
       <div className="hermes-prompts">

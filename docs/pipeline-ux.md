@@ -49,6 +49,6 @@ El arrastre cambia de etapa; no reordena posiciones dentro de una etapa. No se a
 2. ~~**Leads y Empresas.**~~ Hecho; ver arriba. Mejorar cualificación y conversión, datos de contacto incompletos y navegación al historial. Mantener la trazabilidad y evitar duplicados.
 3. **Proyectos.** Pulir ficha de tarea, responsables, fechas y cambio entre tablero y roadmap. Probar proyectos con muchas tareas y sin fechas antes de ampliar funcionalidades.
 4. **Ventas y Facturas.** Revisar jerarquía de tablas y formularios, validaciones y estados de confirmación/cobro. Conservar los controles de facturación ya probados.
-5. **Hermes.** Concretar el endpoint y contrato de la instalación desplegada. Definir las acciones automáticas autorizadas, permisos, idempotencia y trazabilidad sobre los comandos existentes. No dar por conectada la instalación remota hasta validar una llamada real.
+5. **Hermes.** Concretar el endpoint y contrato de la instalación desplegada. Definir las acciones automáticas autorizadas, permisos, idempotencia y trazabilidad sobre los comandos existentes. No dar por conectada la instalación remota hasta validar una llamada real. Las claves no se muestran nunca: ni en el chat, ni en errores, ni en la interfaz. El campo es una contraseña, sin botón para revelarla.
 
 Antes de iniciar otro módulo: revisar cambios locales del usuario, preservar datos y comprobar el recorrido completo del módulo anterior. No hacer una sustitución global de estilos ni añadir indicadores sin una decisión concreta que soporten.
