@@ -44,3 +44,6 @@ Campo opcional `mrr`, total por columna, CSV e Informes (MRR abierto).
 
 ## Fase 4 — Historial
 `stageHistory` inmutable al cambiar etapa; `daysInStage` desde la última transición.
+
+## Fase 5 — SLA / metas / WIP
+Indicador de días y SLA, meta semanal por columna, toast al ganar, WIP warn/block.
