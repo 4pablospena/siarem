@@ -38,3 +38,6 @@ En modo compacto la card muestra título, importe/MRR, chips de etiqueta y estad
 
 ## Fase 2 — Etiquetas
 Catálogo `opportunityTags`, chips en card (máx. 3 +N) y filtro/búsqueda por etiqueta.
+
+## Fase 3 — MRR
+Campo opcional `mrr`, total por columna, CSV e Informes (MRR abierto).
