@@ -53,3 +53,6 @@ Indicador de días y SLA, meta semanal por columna, toast al ganar, WIP warn/blo
 
 ## Fase 7 — Orden y filtros
 Rank en columna, filtros avanzados y vista compacta (detalle arriba en este documento).
+
+## Fase 8 — Siarem-bot
+Brief con stageIds/tags/MRR; acción stage validada contra el mapa del espacio.
