@@ -13,9 +13,12 @@ const line=z.object({description:name,quantity:z.number().positive().max(1e6),pr
 export const leadStatuses = ['Nuevo','Contactado','Cualificado','Convertido','Descartado'] as const;
 export const taskStatuses = ['Por hacer','En curso','Hecho'] as const;
 export const leadSources = ['Web','Referencia','Outbound','Evento','Otro'] as const;
+export const personRoles = ['Decisor','Técnico','Finanzas','Otro'] as const;
 export const schemas={
  leads:z.object({...base,name,contact:z.string().max(200),email:z.string().email('El correo no es válido').or(z.literal('')),phone:z.string().max(100),source:z.enum(leadSources),status:z.enum(leadStatuses),notes:z.string().max(3000),nextDate:date.or(z.literal('')),createdAt:date,convertedCompanyId:z.string().optional(),convertedOpportunityId:z.string().optional()}),
  companies:z.object({...base,name,email:z.string().email('El correo no es válido').or(z.literal('')),contact:z.string().max(500),phone:z.string().max(100),contactDays:z.number().int().min(1).max(90)}),
+ people:z.object({...base,companyId:name,name,email:z.string().email('El correo no es válido').or(z.literal('')),phone:z.string().max(100),role:z.enum(personRoles),opportunityId:z.string().max(80).default('')}),
+ services:z.object({...base,name,price:money,policy:z.enum(['fixed','milestones','hours']),tasks:z.string().trim().min(1,'Añade al menos una tarea de entrega').max(5000)}),
  opportunities:z.object({...base,companyId:name,title:name,amount:money,stage:z.enum(stages),closeDate:date,nextStep:z.string().max(500),nextDate:date.or(z.literal('')),createdAt:date}),
  interactions:z.object({...base,companyId:name,opportunityId:z.string(),kind:z.enum(['Llamada','Email','Reunión','Nota']),date,notes:name}),
  followups:z.object({...base,opportunityId:name,title:name,dueDate:date,done:z.boolean()}),
@@ -31,7 +34,7 @@ export type Kind=keyof typeof schemas;
 export type Entity={ [K in Kind]:z.infer<typeof schemas[K]> };
 export type State={ [K in Kind]:Entity[K][] };
 export const emptyState=():State=>Object.fromEntries(Object.keys(schemas).map(k=>[k,[]])) as unknown as State;
-export function ensureState(input:State):State{const state=structuredClone({...emptyState(),...input,leads:input.leads??[]}) as State;for(const opportunity of state.opportunities){const stage=legacyStages[(opportunity as {stage:string}).stage];if(stage)opportunity.stage=stage}for(const project of state.projects){const row=project as Entity['projects']&{orderId?:string;body?:string};row.orderId=row.orderId||'';row.body=row.body??''}for(const task of state.delivery){const row=task as Entity['delivery']&{status?:string;assignee?:string;startDate?:string;dueDate?:string};if(!row.status||!taskStatuses.includes(row.status as (typeof taskStatuses)[number]))row.status=row.done?'Hecho':'Por hacer';row.assignee=row.assignee??'';row.startDate=row.startDate||'';row.dueDate=row.dueDate||'';row.done=row.status==='Hecho'}return state}
+export function ensureState(input:State):State{const state=structuredClone({...emptyState(),...input,leads:input.leads??[],people:input.people??[],services:input.services??[]}) as State;for(const opportunity of state.opportunities){const stage=legacyStages[(opportunity as {stage:string}).stage];if(stage)opportunity.stage=stage}for(const project of state.projects){const row=project as Entity['projects']&{orderId?:string;body?:string};row.orderId=row.orderId||'';row.body=row.body??''}for(const task of state.delivery){const row=task as Entity['delivery']&{status?:string;assignee?:string;startDate?:string;dueDate?:string};if(!row.status||!taskStatuses.includes(row.status as (typeof taskStatuses)[number]))row.status=row.done?'Hecho':'Por hacer';row.assignee=row.assignee??'';row.startDate=row.startDate||'';row.dueDate=row.dueDate||'';row.done=row.status==='Hecho'}for(const person of state.people){const row=person as Entity['people']&{opportunityId?:string};row.opportunityId=row.opportunityId||''}for(const company of state.companies){if(!company.contact?.trim())continue;if(state.people.some(p=>p.companyId===company.id))continue;state.people.push({id:`migrated-${company.id}`,demo:company.demo,companyId:company.id,name:company.contact,email:company.email||'',phone:company.phone||'',role:'Decisor',opportunityId:''})}const audit=state as State&{botActions?:unknown[]};if(!Array.isArray(audit.botActions))audit.botActions=[];return state}
 export const total=(lines:Entity['quotes']['lines'])=>Math.round(lines.reduce((s,l)=>s+l.quantity*l.price,0)*100)/100;
 export const round=(n:number)=>Math.round(n*100)/100;
 export const eur=(n:number)=>new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(n);
@@ -58,8 +61,10 @@ export function apply(s0:State,cmd:Command):State{
   if(['invoices','payments'].includes(k!))fail('Usa la acción específica para este registro');
   const r=schemas[k!].parse(cmd.record) as any;
   const old=(s[k!] as any[]).find(x=>x.id===r.id);r.demo=old?.demo??false;
-  if(!old){if(k==='opportunities'||k==='interactions')r.demo=get(s,'companies',r.companyId).demo;if(k==='followups'||k==='quotes')r.demo=get(s,'opportunities',r.opportunityId).demo;if(k==='orders')r.demo=get(s,'quotes',r.quoteId).demo;if(k==='delivery')r.demo=get(s,'projects',r.projectId).demo;if(k==='hours')r.demo=get(s,'delivery',r.taskId).demo}
+  if(!old){if(k==='opportunities'||k==='interactions'||k==='people')r.demo=get(s,'companies',r.companyId).demo;if(k==='followups'||k==='quotes')r.demo=get(s,'opportunities',r.opportunityId).demo;if(k==='orders')r.demo=get(s,'quotes',r.quoteId).demo;if(k==='delivery')r.demo=get(s,'projects',r.projectId).demo;if(k==='hours')r.demo=get(s,'delivery',r.taskId).demo;if(k==='services')r.demo=false}
   if(k==='leads'){if(old){r.createdAt=old.createdAt;r.convertedCompanyId=old.convertedCompanyId;r.convertedOpportunityId=old.convertedOpportunityId;if(old.status==='Convertido')r.status='Convertido'}else{r.createdAt=today();if(r.status==='Convertido')fail('Convierte el lead para crear la empresa y la oportunidad')}}
+  if(k==='people'){get(s,'companies',r.companyId);if(r.opportunityId&&get(s,'opportunities',r.opportunityId).companyId!==r.companyId)fail('La oportunidad no corresponde a la empresa')}
+  if(k==='services'){/* catalog entry */}
   if(k==='opportunities'){get(s,'companies',r.companyId);if(old){r.createdAt=old.createdAt;if(r.companyId!==old.companyId&&(s.interactions.some(i=>i.opportunityId===r.id)||s.quotes.some(q=>q.opportunityId===r.id)))fail('Esta oportunidad tiene interacciones o presupuestos. Conserva su empresa de origen')}else r.createdAt=today()}
   if(k==='interactions'){get(s,'companies',r.companyId);if(r.opportunityId&&get(s,'opportunities',r.opportunityId).companyId!==r.companyId)fail('La oportunidad no corresponde a la empresa');if(r.date>today())fail('El contacto no puede tener una fecha futura')}
   if(k==='followups')get(s,'opportunities',r.opportunityId);
@@ -79,6 +84,11 @@ export function apply(s0:State,cmd:Command):State{
   else s.companies.push({id:companyId,demo:lead.demo,name:lead.name,email:lead.email,contact:lead.contact,phone:lead.phone,contactDays:30});
   const opportunityId=id();
   s.opportunities.push({id:opportunityId,demo:lead.demo,companyId,title:cmd.title||`Oportunidad · ${lead.name}`,amount:0,stage:'Cualificación',closeDate:dateOffset(30),nextStep:lead.nextDate?'Contactar en la fecha prevista':'Preparar la primera reunión',nextDate:lead.nextDate||today(),createdAt:today()});
+  if(lead.contact.trim()||lead.email.trim()||lead.phone.trim()){
+   const existing=s.people.find(p=>p.companyId===companyId&&(sameText(p.name,lead.contact)||sameText(p.email,lead.email)));
+   if(existing){if(!existing.opportunityId)existing.opportunityId=opportunityId;for(const field of ['email','phone'] as const)if(!existing[field]&&lead[field])existing[field]=lead[field]}
+   else s.people.push({id:id(),demo:lead.demo,companyId,name:lead.contact||lead.name,email:lead.email,phone:lead.phone,role:'Decisor',opportunityId});
+  }
   if(lead.notes.trim())s.interactions.push({id:id(),demo:lead.demo,companyId,opportunityId,kind:'Nota',date:today(),notes:`Lead convertido · ${lead.notes}`});
   lead.status='Convertido';lead.convertedCompanyId=companyId;lead.convertedOpportunityId=opportunityId;
  }else if(cmd.action==='stage'){
@@ -118,7 +128,7 @@ export function apply(s0:State,cmd:Command):State{
   for(const k of Object.keys(s) as Kind[])(s[k] as any[])=(s[k] as any[]).filter(x=>!x.demo);
  }else if(cmd.action==='delete'){
   const k=cmd.kind!;if(!schemas[k])fail('Registro no válido');get(s,k,cmd.id!);
-  const links:Partial<Record<Kind,[Kind,string][]>>={companies:[['opportunities','companyId'],['interactions','companyId']],opportunities:[['quotes','opportunityId'],['interactions','opportunityId'],['followups','opportunityId']],quotes:[['orders','quoteId']],orders:[['projects','orderId'],['invoices','orderId']],projects:[['delivery','projectId']],delivery:[['hours','taskId']]};
+  const links:Partial<Record<Kind,[Kind,string][]>>={companies:[['opportunities','companyId'],['interactions','companyId'],['people','companyId']],opportunities:[['quotes','opportunityId'],['interactions','opportunityId'],['followups','opportunityId']],quotes:[['orders','quoteId']],orders:[['projects','orderId'],['invoices','orderId']],projects:[['delivery','projectId']],delivery:[['hours','taskId']]};
   if(links[k]?.some(([child,key])=>(s[child] as any[]).some(r=>r[key]===cmd.id)))fail('Tiene registros vinculados. Elimínalos primero para conservar la trazabilidad');
   if(k==='hours'&&s.invoices.some(i=>i.hourIds.includes(cmd.id!)))fail('Estas horas ya están facturadas');
   if(k==='payments')fail('El cobro registrado no puede borrarse desde esta acción');
@@ -137,7 +147,9 @@ export function seed():State{
   {id:'demo-lead-ready',demo,name:'Clínica Bruma',contact:'Elena Ruiz',email:'elena@bruma.example',phone:'',source:'Evento',status:'Cualificado',notes:'Quiere una propuesta para ordenar presupuestos y seguimientos. Orientación: 3.200 €.',nextDate:dateOffset(1),createdAt:dateOffset(-2)}
  );
  s.companies.push({id:'demo-company',demo,name:'Prueba Peña',email:'',contact:'Responsable de operaciones',phone:'',contactDays:30});
+ s.services.push({id:'demo-service',demo,name:'Servicio a medida',price:2400,policy:'fixed',tasks:'Preparación\nEjecución\nEntrega y revisión'});
  s.opportunities.push({id:'demo-opportunity',demo,companyId:'demo-company',title:'Servicio a medida · segunda fase',amount:4800,stage:'Propuesta',closeDate:dateOffset(5),nextStep:'Revisar la propuesta con el responsable',nextDate:dateOffset(-2),createdAt:dateOffset(-40)},{id:'demo-won',demo,companyId:'demo-company',title:'Servicio a medida · primera fase',amount:2400,stage:'Ganada',closeDate:dateOffset(-12),nextStep:'Revisar la entrega inicial',nextDate:dateOffset(4),createdAt:dateOffset(-50)});
+ s.people.push({id:'demo-person',demo,companyId:'demo-company',name:'Responsable de operaciones',email:'',phone:'',role:'Decisor',opportunityId:'demo-opportunity'});
  s.interactions.push(...[-18,-10,-4].map((n,i)=>({id:'demo-contact-'+i,demo,companyId:'demo-company',opportunityId:'demo-opportunity',kind:['Llamada','Reunión','Email'][i] as Entity['interactions']['kind'],date:dateOffset(n),notes:['Primera conversación sobre las necesidades de la empresa.','Revisamos el alcance de la segunda fase y las fechas.','Propuesta enviada. Pendiente de revisar condiciones.'][i]})));
  s.followups.push({id:'demo-followup',demo,opportunityId:'demo-opportunity',title:'Llamar para revisar la propuesta',dueDate:dateOffset(-2),done:false});
  s.quotes.push({id:'demo-quote',demo,opportunityId:'demo-won',title:'P-001 · Servicio a medida',lines:[{description:'Servicio a medida · primera fase',quantity:1,price:2400,policy:'fixed',tasks:'Preparación\nEjecución\nEntrega y revisión'}]});
