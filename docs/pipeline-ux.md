@@ -50,3 +50,6 @@ Indicador de días y SLA, meta semanal por columna, toast al ganar, WIP warn/blo
 
 ## Fase 6 — Probabilidad, responsable y pérdida
 % por etapa, forecast ponderado, `ownerUserId`, motivos de pérdida obligatorios al cerrar en lost.
+
+## Fase 7 — Orden y filtros
+Rank en columna, filtros avanzados y vista compacta (detalle arriba en este documento).
