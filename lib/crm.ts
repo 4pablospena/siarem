@@ -3,6 +3,7 @@ export const stages = ['Cualificación','Propuesta','Negociación','Ganada','Per
 const legacyStages: Record<string,(typeof stages)[number]> = {'Lead Discovery':'Cualificación','Meeting Scheduled':'Cualificación','Sales Qualified':'Cualificación','Proposal sent & Negotiation':'Propuesta','Won & Ongoing':'Ganada','Finnished':'Ganada','ReActivate in the future':'Cualificación','Lost or Discarded':'Perdida'};
 export const today = () => new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Madrid',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 export const dateOffset = (n:number) => {const d=new Date(today()+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)};
+const sameText=(a='',b='')=>{const key=(v:string)=>v.normalize('NFD').replace(/\p{Diacritic}/gu,'').trim().toLowerCase();return !!key(a)&&key(a)===key(b)};
 export const days = (date:string, now=today()) => Math.floor((Date.parse(now+'T12:00:00Z')-Date.parse(date+'T12:00:00Z'))/86400000);
 const name=z.string().trim().min(1,'Falta un campo obligatorio').max(500);
 const date=z.string().regex(/^\d{4}-\d{2}-\d{2}$/,'Indica una fecha válida').refine(v=>!Number.isNaN(Date.parse(v))&&new Date(v).toISOString().slice(0,10)===v,'Fecha no válida');
@@ -72,8 +73,10 @@ export function apply(s0:State,cmd:Command):State{
   const lead=get(s,'leads',cmd.id!);
   if(lead.status==='Descartado')fail('Un lead descartado no se convierte. Vuelve a abrirlo si retoma el interés');
   if(lead.status==='Convertido')fail('Este lead ya está convertido');
-  const companyId=lead.convertedCompanyId||id();
-  if(!s.companies.some(c=>c.id===companyId))s.companies.push({id:companyId,demo:lead.demo,name:lead.name,email:lead.email,contact:lead.contact,phone:lead.phone,contactDays:30});
+  const company=s.companies.find(c=>c.id===lead.convertedCompanyId)||s.companies.find(c=>c.demo===lead.demo&&(sameText(c.name,lead.name)||sameText(c.email,lead.email)));
+  const companyId=company?.id||lead.convertedCompanyId||id();
+  if(company){for(const field of ['contact','email','phone'] as const)if(!company[field]&&lead[field])company[field]=lead[field]}
+  else s.companies.push({id:companyId,demo:lead.demo,name:lead.name,email:lead.email,contact:lead.contact,phone:lead.phone,contactDays:30});
   const opportunityId=id();
   s.opportunities.push({id:opportunityId,demo:lead.demo,companyId,title:cmd.title||`Oportunidad · ${lead.name}`,amount:0,stage:'Cualificación',closeDate:dateOffset(30),nextStep:lead.nextDate?'Contactar en la fecha prevista':'Preparar la primera reunión',nextDate:lead.nextDate||today(),createdAt:today()});
   if(lead.notes.trim())s.interactions.push({id:id(),demo:lead.demo,companyId,opportunityId,kind:'Nota',date:today(),notes:`Lead convertido · ${lead.notes}`});

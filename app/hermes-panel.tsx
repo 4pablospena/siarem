@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Send, X } from 'lucide-react';
 import { Sheet,SheetContent,SheetTitle,SheetDescription } from '@/components/ui/sheet';
 import { eur, risk, today, type State } from '@/lib/crm';
+import { isOpenOpportunity, pipelineNextAction, pipelineOpportunities } from '@/lib/pipeline';
 
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
 
@@ -11,8 +12,12 @@ const prompts = ['¿Qué hago ahora?', '¿A quién escribo primero?', 'Prepáram
 
 export function hermesBrief(view: string, state: State) {
   const openLeads = state.leads.filter((lead) => lead.status !== 'Convertido' && lead.status !== 'Descartado');
-  const openOpps = state.opportunities.filter((item) => item.stage !== 'Ganada' && item.stage !== 'Perdida');
-  const urgent = state.opportunities.filter((item) => risk(state, item).level > 0);
+  const openOpps = state.opportunities.filter(isOpenOpportunity);
+  const urgent = pipelineOpportunities(state, { focus: true });
+  const next = (item: State['opportunities'][number]) => {
+    const action = pipelineNextAction(state, item);
+    return action ? `siguiente acción ${action.title}${action.date ? ' (' + action.date + ')' : ''}` : '';
+  };
   const unpaid = state.invoices.filter((invoice) => !invoice.paid);
   const lines = [
     `Pantalla: ${view}`,
@@ -21,10 +26,10 @@ export function hermesBrief(view: string, state: State) {
       ? `Leads por trabajar: ${openLeads.map((lead) => `${lead.name} (${lead.status}${lead.nextDate ? ', acción ' + lead.nextDate : ''})`).join('; ')}`
       : 'Leads por trabajar: ninguno',
     openOpps.length
-      ? `Oportunidades abiertas: ${openOpps.map((item) => `${item.title} en ${item.stage}, ${eur(item.amount)}`).join('; ')}`
+      ? `Oportunidades abiertas: ${openOpps.map((item) => `${item.title} en ${item.stage}, ${eur(item.amount)}, ${next(item)}`).join('; ')}`
       : 'Oportunidades abiertas: ninguna',
     urgent.length
-      ? `Piden atención: ${urgent.map((item) => `${item.title}: ${risk(state, item).reason}`).join('; ')}`
+      ? `Piden atención, por prioridad: ${urgent.map((item) => `${item.title}: ${risk(state, item).reason}`).join('; ')}`
       : 'Piden atención: ninguna',
     unpaid.length ? `Facturas sin cobrar: ${unpaid.map((invoice) => `${invoice.title} ${eur(invoice.amount)} vence ${invoice.dueDate}`).join('; ')}` : 'Facturas sin cobrar: ninguna',
   ];
@@ -102,7 +107,7 @@ export function HermesPanel({ open, context, onClose, onRestoreFocus }: { open: 
           <SheetTitle>Hermes</SheetTitle>
           <SheetDescription>Te ayuda con el siguiente paso</SheetDescription>
         </div>
-        <button type="button" aria-label="Cerrar Hermes" onClick={onClose}>
+        <button type="button" className="icon-button" aria-label="Cerrar Hermes" onClick={onClose}>
           <X size={16} />
         </button>
       </header>

@@ -1,3 +1,4 @@
+import { pipelineNextAction, pipelineOpportunities } from './pipeline.ts';
 import { projectTasks } from './project-tasks.ts';
 import {risk,total,projectCost,companyForOrder,today,ensureState,type State} from './crm.ts';
 export function csvExport(s:State,view:string,query='',filter='all',companyFilter='all',projectId=''){
@@ -8,9 +9,8 @@ export function csvExport(s:State,view:string,query='',filter='all',companyFilte
  const scoped=(id?:string)=>companyFilter==='all'||companyFilter===id;
  let rows:unknown[][]=[];
  if(view==='Foco'||view==='Pipeline'){
-  let opps=s.opportunities.filter(o=>scoped(o.companyId)&&match(o.title,company(o.companyId)?.name,o.nextStep,o.stage));
-  if(view==='Foco')opps=opps.filter(o=>filter==='all'?risk(s,o).level>0:filter==='healthy'?risk(s,o).level===0:String(risk(s,o).level)===filter).sort((a,b)=>risk(s,b).level-risk(s,a).level||(a.nextDate||a.closeDate).localeCompare(b.nextDate||b.closeDate));
-  rows=[['Empresa','Oportunidad','Importe EUR','Etapa','Último contacto','Siguiente paso','Riesgo','Motivo'],...opps.map(o=>{const r=risk(s,o);const task=s.followups.filter(t=>t.opportunityId===o.id&&!t.done).sort((a,b)=>a.dueDate.localeCompare(b.dueDate))[0];return [company(o.companyId)?.name,o.title,o.amount,o.stage,r.contacted?r.last:'Sin contacto',task?.title||o.nextStep,r.label,r.reason]})];
+  const opps=pipelineOpportunities(s,{query,company:companyFilter,focus:view==='Foco',filter});
+  rows=[['Empresa','Oportunidad','Importe EUR','Etapa','Último contacto','Siguiente paso','Riesgo','Motivo','Fecha de siguiente acción'],...opps.map(o=>{const r=risk(s,o);const next=pipelineNextAction(s,o);return [company(o.companyId)?.name,o.title,o.amount,o.stage,r.contacted?r.last:'Sin contacto',next?.title||'',r.label,r.reason,next?.date||'']})];
  }else if(view==='Leads')rows=[['Lead','Contacto','Email','Teléfono','Fuente','Estado','Próxima acción','Notas'],...s.leads.filter(l=>match(l.name,l.contact,l.email,l.source,l.status,l.notes)&&(filter==='all'||(filter==='due'?!!l.nextDate&&l.nextDate<today()&&!['Convertido','Descartado'].includes(l.status):l.status===filter))).map(l=>[l.name,l.contact,l.email,l.phone,l.source,l.status,l.nextDate,l.notes])];
  else if(view==='Empresas')rows=[['Empresa','Contacto','Email','Teléfono','Días sin contacto'],...s.companies.filter(c=>match(c.name,c.contact,c.email,c.phone)).map(c=>[c.name,c.contact,c.email,c.phone,c.contactDays])];
  else if(view==='Ventas'){
