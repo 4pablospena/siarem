@@ -256,6 +256,26 @@ input:focus,textarea:focus { border-color:var(--ring); }
 .board-next>span { font-size:10px; color:#b1bdcd; }.board-next p { font-size:12px; line-height:1.5; margin:3px 0; overflow-wrap:anywhere; }.board-next small { font-size:11px; color:var(--muted-foreground); }
 .row-foot { display:flex; gap:8px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
 .board-card .badge { font-size:10px; padding:4px 7px; }.board-card .row-actions { margin-left:auto; }
+.board-card.compact { gap:8px; padding:12px; }
+.board-hint { display:block; margin-top:6px; font-size:11px; color:var(--muted-foreground); }
+.board-warn { display:block; margin-top:4px; font-size:11px; color:#f0a0a0; }
+.card-tags { display:flex; flex-wrap:wrap; gap:4px; }
+.tag-chip { font-size:10px; padding:2px 7px; border-radius:999px; border:1px solid #54627a; background:#1a2433; color:#d7deea; }
+.tag-chip.color-slate { border-color:#64748b; }.tag-chip.color-blue { border-color:#3b82f6; color:#bfdbfe; }
+.tag-chip.color-green { border-color:#22c55e; color:#bbf7d0; }.tag-chip.color-amber { border-color:#f59e0b; color:#fde68a; }
+.tag-chip.color-red { border-color:#ef4444; color:#fecaca; }.tag-chip.color-violet { border-color:#8b5cf6; color:#ddd6fe; }
+.owner-initials { display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:999px; font-size:10px; background:#334155; color:#e2e8f0; }
+.pipeline-toolbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:0 0 12px; padding-inline:0; }
+.pipeline-forecast { display:flex; gap:16px; flex-wrap:wrap; font-size:13px; color:var(--muted-foreground); }
+.pipeline-forecast strong { color:var(--foreground); }
+.pipeline-settings .settings-list { list-style:none; padding:0; margin:0 0 12px; display:flex; flex-direction:column; gap:8px; }
+.pipeline-settings .settings-list li { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:8px; border:1px solid var(--border); border-radius:10px; }
+.pipeline-settings .settings-list li.archived { opacity:.55; }
+.pipeline-settings .inline-field { display:flex; flex-direction:column; gap:2px; font-size:11px; color:var(--muted-foreground); }
+.pipeline-settings .inline-field input { width:72px; }
+.stage-history { list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:8px; }
+.stage-history li { font-size:13px; color:var(--muted-foreground); }
+.sla-breach { color:#f0a0a0; }
 .board-move { font-size:11px; }.board-move-menu [role=menuitem] { min-height:40px; }
 .column-empty { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; min-height:130px; padding:20px 10px; border:1px dashed #4b5d73; border-radius:10px; font-size:12px; text-align:center; color:var(--muted-foreground); }
 .column-empty .subtle { font-size:12px; }

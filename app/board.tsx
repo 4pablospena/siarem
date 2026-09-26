@@ -9,14 +9,14 @@ import {
 import { ArrowRight, GripVertical, Plus } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
-export type BoardColumn = { key: string; label: string; tone: number; total?: string };
-export type BoardCard = { title: string; subtitle?: string; aside?: string; note?: string; meta?: string; chip: ReactNode; tools?: ReactNode };
+export type BoardColumn = { key: string; label: string; tone: number; total?: string; hint?: string; warn?: string };
+export type BoardCard = { title: string; subtitle?: string; aside?: string; note?: string; meta?: string; chip: ReactNode; tools?: ReactNode; tags?: ReactNode; compactExtra?: ReactNode };
 type Item = { id: string };
 type BoardProps<T extends Item> = {
   label: string; columns: BoardColumn[]; items: T[]; columnOf: (item: T) => string;
   busy: boolean; onOpen: (item: T) => void; onMove: (item: T, to: string) => void;
   card: (item: T) => BoardCard; onCreate?: (column: string) => void; filtered?: boolean;
-  moveLabel?: string;
+  moveLabel?: string; compact?: boolean;
 };
 
 // Pointer drops must be inside a column: dropping outside cancels the move.
@@ -35,7 +35,7 @@ const columnCoordinates: KeyboardCoordinateGetter = (event, { currentCoordinates
   };
 };
 
-function CardContent({ content, handle, onOpen, children }: { content: BoardCard; handle?: ReactNode; onOpen?: () => void; children?: ReactNode }) {
+function CardContent({ content, handle, onOpen, children, compact }: { content: BoardCard; handle?: ReactNode; onOpen?: () => void; children?: ReactNode; compact?: boolean }) {
   return <>
     <div className="record-title">
       <span>{content.subtitle && <small className="board-company">{content.subtitle}</small>}
@@ -43,18 +43,20 @@ function CardContent({ content, handle, onOpen, children }: { content: BoardCard
       </span>{handle}
     </div>
     {content.aside && <strong className="board-aside">{content.aside}</strong>}
-    {content.note && <div className="board-next"><span>Siguiente paso</span><p>{content.note}</p>{content.meta && <small>{content.meta}</small>}</div>}
+    {content.tags}
+    {!compact && content.note && <div className="board-next"><span>Siguiente paso</span><p>{content.note}</p>{content.meta && <small>{content.meta}</small>}</div>}
+    {compact && content.compactExtra}
     <div className="row-foot">{content.chip}{children}</div>
   </>;
 }
 
-function BoardRecord({ id, column, content, columns, busy, onOpen, onMove, moveLabel }: {
+function BoardRecord({ id, column, content, columns, busy, onOpen, onMove, moveLabel, compact }: {
   id: string; column: string; content: BoardCard; columns: BoardColumn[]; busy: boolean;
-  onOpen: () => void; onMove: (to: string) => void; moveLabel: string;
+  onOpen: () => void; onMove: (to: string) => void; moveLabel: string; compact?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, isDragging } = useDraggable({ id, disabled: busy, data: { column, title: content.title } });
-  return <article ref={setNodeRef} className={'board-card' + (isDragging ? ' dragging' : '')} data-record-id={id}>
-    <CardContent content={content} onOpen={onOpen} handle={
+  return <article ref={setNodeRef} className={'board-card' + (isDragging ? ' dragging' : '') + (compact ? ' compact' : '')} data-record-id={id}>
+    <CardContent content={content} onOpen={onOpen} compact={compact} handle={
       <button type="button" ref={setActivatorNodeRef} {...attributes} {...listeners} disabled={busy}
         className="drag-handle" aria-label={'Arrastrar ' + content.title} title="Arrastrar · Espacio y flechas para mover">
         <GripVertical size={17}/>
@@ -82,14 +84,17 @@ function Column({ column, count, children, dragging, onCreate, filtered, busy }:
   return <section ref={setNodeRef} className={'board-column tone-' + column.tone + (isOver && dragging ? ' drop-over' : '')} aria-labelledby={heading} data-column={column.key}>
     <header><div className="board-column-title"><span className="board-dot"/><h3 id={heading}>{column.label}</h3><span className="count">{count}</span>
       {onCreate && <button className="icon-button board-add" type="button" disabled={busy} aria-label={'Nueva oportunidad en ' + column.label} onClick={onCreate}><Plus size={16}/></button>}
-    </div>{column.total && <strong className="board-total">{column.total}<small>Importe estimado</small></strong>}</header>
+    </div>{column.total && <strong className="board-total">{column.total}<small>Importe estimado</small></strong>}
+    {column.hint && <small className="board-hint">{column.hint}</small>}
+    {column.warn && <small className="board-warn">{column.warn}</small>}
+    </header>
     <div className="board-records">{children}{!count && <div className="column-empty">{dragging ? 'Suelta aquí' : filtered ? 'Sin coincidencias' : onCreate ? 'Sin oportunidades en esta etapa' : 'Sin tareas en esta etapa'}
       {!dragging && !filtered && onCreate && <button className="subtle" type="button" disabled={busy} onClick={onCreate}><Plus size={14}/> Añadir oportunidad</button>}
     </div>}</div>
   </section>;
 }
 
-export function Board<T extends Item>({ label, columns, items, columnOf, busy, onOpen, onMove, card, onCreate, filtered, moveLabel = 'Mover a otra etapa' }: BoardProps<T>) {
+export function Board<T extends Item>({ label, columns, items, columnOf, busy, onOpen, onMove, card, onCreate, filtered, moveLabel = 'Mover a otra etapa', compact }: BoardProps<T>) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const boardRef = useRef<HTMLDivElement>(null);
   const pendingFocus = useRef<{ id: string; handle: boolean } | null>(null);
@@ -137,12 +142,12 @@ export function Board<T extends Item>({ label, columns, items, columnOf, busy, o
       {columns.map(column => {
         const list = items.filter(item => columnOf(item) === column.key);
         return <Column key={column.key} column={column} count={list.length} dragging={!!activeId} busy={busy} filtered={filtered} onCreate={onCreate ? () => onCreate(column.key) : undefined}>
-          {list.map(item => <BoardRecord key={item.id} id={item.id} column={column.key} content={card(item)} columns={columns} busy={busy} moveLabel={moveLabel} onOpen={() => onOpen(item)} onMove={to => move(item, to)}/>)}
+          {list.map(item => <BoardRecord key={item.id} id={item.id} column={column.key} content={card(item)} columns={columns} busy={busy} moveLabel={moveLabel} compact={compact} onOpen={() => onOpen(item)} onMove={to => move(item, to)}/>)}
         </Column>;
       })}
     </div>
     <DragOverlay dropAnimation={null} zIndex={60}>
-      {activeItem && <div className="board-card board-card-overlay" aria-hidden="true"><CardContent content={card(activeItem)} handle={<GripVertical size={17}/>}/></div>}
+      {activeItem && <div className={'board-card board-card-overlay' + (compact ? ' compact' : '')} aria-hidden="true"><CardContent content={card(activeItem)} compact={compact} handle={<GripVertical size={17}/>}/></div>}
     </DragOverlay>
   </DndContext>;
 }

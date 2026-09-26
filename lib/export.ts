@@ -1,8 +1,10 @@
-import { pipelineNextAction, pipelineOpportunities } from './pipeline.ts';
+import { pipelineNextAction, pipelineOpportunities, type PipelineFilterOptions } from './pipeline.ts';
 import { projectTasks } from './project-tasks.ts';
 import { reportCsv } from './reports.ts';
 import {risk,total,projectCost,companyForOrder,today,ensureState,type State} from './crm.ts';
-export function csvExport(s:State,view:string,query='',filter='all',companyFilter='all',projectId=''){
+import { stageName } from './pipeline-stages.ts';
+
+export function csvExport(s:State,view:string,query='',filter='all',companyFilter='all',projectId='',extra: PipelineFilterOptions = {}){
  s=ensureState(s);
  const normalize=(v:string)=>v.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
  const match=(...v:unknown[])=>normalize(v.join(' ')).includes(normalize(query));
@@ -11,8 +13,13 @@ export function csvExport(s:State,view:string,query='',filter='all',companyFilte
  let rows:unknown[][]=[];
  if(view==='Informes')return reportCsv(s);
  if(view==='Foco'||view==='Pipeline'){
-  const opps=pipelineOpportunities(s,{query,company:companyFilter,focus:view==='Foco',filter});
-  rows=[['Empresa','Oportunidad','Importe EUR','Etapa','Último contacto','Siguiente paso','Riesgo','Motivo','Fecha de siguiente acción'],...opps.map(o=>{const r=risk(s,o);const next=pipelineNextAction(s,o);return [company(o.companyId)?.name,o.title,o.amount,o.stage,r.contacted?r.last:'Sin contacto',next?.title||'',r.label,r.reason,next?.date||'']})];
+  const opps=pipelineOpportunities(s,{query,company:companyFilter,focus:view==='Foco',filter,...extra});
+  rows=[['Empresa','Oportunidad','Importe EUR','MRR EUR','Etapa','Etiquetas','Responsable','Último contacto','Siguiente paso','Riesgo','Motivo','Fecha de siguiente acción'],...opps.map(o=>{
+   const r=risk(s,o);
+   const next=pipelineNextAction(s,o);
+   const tags=(o.tagIds||[]).map(id=>s.opportunityTags.find(t=>t.id===id)?.name).filter(Boolean).join(', ');
+   return [company(o.companyId)?.name,o.title,o.amount,o.mrr??'',stageName(s,o.stageId),tags,o.ownerUserId||'',r.contacted?r.last:'Sin contacto',next?.title||'',r.label,r.reason,next?.date||''];
+  })];
  }else if(view==='Leads')rows=[['Lead','Contacto','Email','Teléfono','Fuente','Estado','Próxima acción','Notas'],...s.leads.filter(l=>match(l.name,l.contact,l.email,l.source,l.status,l.notes)&&(filter==='all'||(filter==='due'?!!l.nextDate&&l.nextDate<today()&&!['Convertido','Descartado'].includes(l.status):l.status===filter))).map(l=>[l.name,l.contact,l.email,l.phone,l.source,l.status,l.nextDate,l.notes])];
  else if(view==='Empresas')rows=[['Empresa','Contacto','Email','Teléfono','Días sin contacto','Personas'],...s.companies.filter(c=>match(c.name,c.contact,c.email,c.phone)).map(c=>[c.name,c.contact,c.email,c.phone,c.contactDays,s.people.filter(p=>p.companyId===c.id).map(p=>p.name).join(', ')])];
  else if(view==='Catálogo')rows=[['Servicio','Política','Precio EUR','Tareas'],...s.services.filter(svc=>match(svc.name,svc.policy,svc.tasks)).map(svc=>[svc.name,svc.policy,svc.price,svc.tasks.replaceAll('\n',' | ')])];

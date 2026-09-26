@@ -3,6 +3,7 @@
 import { ArrowUpRight, CheckCheck, Clock3 } from 'lucide-react';
 import { eur, risk, today, type State } from '@/lib/crm';
 import { pipelineNextAction } from '@/lib/pipeline';
+import { stageName } from '@/lib/pipeline-stages';
 
 export function FocusQueue({ state, opportunities, filtered, onOpen, onPipeline }: {
   state: State; opportunities: State['opportunities']; filtered: boolean;
@@ -21,7 +22,7 @@ export function FocusQueue({ state, opportunities, filtered, onOpen, onPipeline 
       const overdue = !!next?.date && next.date < today();
       return <li key={opportunity.id}>
         <button className="focus-record" onClick={() => onOpen(opportunity)} aria-label={'Revisar ' + opportunity.title}>
-          <span className="focus-identity"><small>{state.companies.find(company => company.id === opportunity.companyId)?.name}</small><strong>{opportunity.title}</strong><span className="focus-stage">{opportunity.stage} · {eur(opportunity.amount)}</span></span>
+          <span className="focus-identity"><small>{state.companies.find(company => company.id === opportunity.companyId)?.name}</small><strong>{opportunity.title}</strong><span className="focus-stage">{stageName(state, opportunity.stageId)} · {eur(opportunity.amount)}</span></span>
           <span className="focus-next"><small>Siguiente acción</small><strong>{next?.title}</strong><span className={overdue ? 'red' : ''}><Clock3 size={12}/>{next?.date ? (overdue ? 'Vencida · ' : '') + new Intl.DateTimeFormat('es-ES', { day:'numeric', month:'short', timeZone:'UTC' }).format(new Date(next.date + 'T12:00:00Z')) : 'Sin fecha'}</span></span>
           <span className="focus-reason"><span className={'badge risk-' + health.level}><span className="status-dot"/>{health.label}</span><small>{health.reason}</small></span>
           <ArrowUpRight size={17} aria-hidden="true"/>

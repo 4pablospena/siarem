@@ -12,24 +12,24 @@ test('owner manages team and demo; member cannot', () => {
 
 test('bot actions move stage, create followup, pay invoice, and stay idempotent', () => {
   const state = seed();
-  const open = state.opportunities.find(o => o.stage === 'Propuesta')!;
+  const open = state.opportunities.find(o => o.stageId === 'stage-propuesta')!;
   const staged = runBotAction(state, 'member', 'Ana', 1, {
     requestId: '11111111-1111-1111-1111-111111111111',
     kind: 'stage',
     opportunityId: open.id,
-    stage: 'Negociación',
-    expectedStage: open.stage,
+    stageId: 'stage-negociacion',
+    expectedStageId: open.stageId,
   });
-  assert.equal(staged.state.opportunities.find(o => o.id === open.id)?.stage, 'Negociación');
+  assert.equal(staged.state.opportunities.find(o => o.id === open.id)?.stageId, 'stage-negociacion');
   assert.equal(staged.replayed, false);
   const again = runBotAction(staged.state, 'member', 'Ana', 2, {
     requestId: '11111111-1111-1111-1111-111111111111',
     kind: 'stage',
     opportunityId: open.id,
-    stage: 'Ganada',
+    stageId: 'stage-ganada',
   });
   assert.equal(again.replayed, true);
-  assert.equal(again.state.opportunities.find(o => o.id === open.id)?.stage, 'Negociación');
+  assert.equal(again.state.opportunities.find(o => o.id === open.id)?.stageId, 'stage-negociacion');
 
   const follow = runBotAction(staged.state, 'owner', 'Ana', 2, {
     requestId: '22222222-2222-2222-2222-222222222222',

@@ -1,5 +1,6 @@
 import { today, companyForOrder, ensureState, type State } from './crm.ts';
 import { isOpenOpportunity } from './pipeline.ts';
+import { stageName } from './pipeline-stages.ts';
 
 export type AgendaKind = 'followup' | 'close' | 'interaction' | 'invoice' | 'task';
 
@@ -54,13 +55,13 @@ export function agendaWeek(input: State, anchor = today()): { range: ReturnType<
     });
   }
 
-  for (const o of s.opportunities.filter(isOpenOpportunity).filter(o => inWeek(o.closeDate))) {
+  for (const o of s.opportunities.filter(o => isOpenOpportunity(s, o)).filter(o => inWeek(o.closeDate))) {
     items.push({
       id: `close-${o.id}`,
       date: o.closeDate,
       kind: 'close',
       title: 'Cierre previsto · ' + o.title,
-      detail: o.nextStep || o.stage,
+      detail: o.nextStep || stageName(s, o.stageId),
       companyId: o.companyId,
       opportunityId: o.id,
     });

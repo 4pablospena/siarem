@@ -36,8 +36,24 @@ export function ReportsView({
           <div><span>Ganadas</span><strong>{report.won.count}</strong><small>{eur(report.won.amount)}</small></div>
           <div><span>Perdidas</span><strong>{report.lost.count}</strong><small>{eur(report.lost.amount)}</small></div>
           <div><span>Cobros del mes</span><strong>{report.collectedThisMonth.count}</strong><small>{eur(report.collectedThisMonth.amount)}</small></div>
+          <div><span>MRR abierto</span><strong>{eur(report.openMrr)}</strong><small>/ mes</small></div>
+          <div><span>Forecast ponderado</span><strong>{eur(report.weightedForecast)}</strong><small>importe × %</small></div>
         </div>
       </section>
+
+      {report.lostReasons.length > 0 && (
+        <section className="report-block" aria-labelledby="report-lost-reasons">
+          <h2 id="report-lost-reasons">Motivos de pérdida</h2>
+          <table className="report-table">
+            <thead><tr><th>Motivo</th><th>Cantidad</th><th>Importe</th></tr></thead>
+            <tbody>
+              {report.lostReasons.map(row => (
+                <tr key={row.reasonId}><td>{row.name}</td><td>{row.count}</td><td className="numeric">{eur(row.amount)}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
 
       {report.margins.length > 0 && (
         <section className="report-block" aria-labelledby="report-margin">

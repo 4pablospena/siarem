@@ -2,13 +2,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { seed, apply, today, dateOffset } from '../lib/crm.ts';
 import { businessReport, reportCsv } from '../lib/reports.ts';
+import { isOpenOpportunity } from '../lib/pipeline.ts';
 import { agendaWeek, thisWeekAhead, weekRange } from '../lib/agenda.ts';
 
 test('business report exposes funnel, closings, collections and stuck work', () => {
   const state = seed();
   const report = businessReport(state);
   assert.ok(report.funnel.length >= 3);
-  assert.equal(report.funnel.reduce((n, row) => n + row.count, 0), state.opportunities.filter(o => o.stage !== 'Ganada' && o.stage !== 'Perdida').length);
+  assert.equal(report.funnel.reduce((n, row) => n + row.count, 0), state.opportunities.filter(o => isOpenOpportunity(state, o)).length);
   assert.ok(reportCsv(state).includes('Embudo'));
   assert.ok(report.stuck.length >= 0);
 });

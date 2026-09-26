@@ -4,9 +4,10 @@ import { emptyState } from '../lib/crm.ts';
 import type { State } from '../lib/crm.ts';
 import { pipelineNextAction } from '../lib/pipeline.ts';
 const opportunity: State['opportunities'][number] = {
-  id: 'opportunity', demo: false, companyId: 'company', title: 'Proposal', stage: 'Propuesta',
+  id: 'opportunity', demo: false, companyId: 'company', title: 'Proposal', stageId: 'stage-propuesta',
   amount: 1000, closeDate: '2026-10-01', createdAt: '2026-09-01',
   nextStep: 'Review proposal', nextDate: '2026-09-29',
+  tagIds: [], mrr: null, ownerUserId: '', lostReasonId: '', rank: 0, stageHistory: [],
 };
 test('pipeline shows the earliest pending follow-up, excluding completed and unrelated tasks', () => {
   const state = emptyState();
@@ -38,9 +39,10 @@ test('Siarem-bot brief lists only open work, with the shared next action', async
   const { botBrief } = await import('../app/siarem-bot.tsx');
   const state = emptyState();
   state.companies = [{ id: 'company', demo: false, name: 'Acme', contact: '', email: '', phone: '', contactDays: 30 }];
-  state.opportunities = [{ ...opportunity, nextDate: '2020-01-01' }, { ...opportunity, id: 'won', title: 'Closed deal', stage: 'Ganada', nextDate: '2020-01-01' }];
+  state.opportunities = [{ ...opportunity, nextDate: '2020-01-01' }, { ...opportunity, id: 'won', title: 'Closed deal', stageId: 'stage-ganada', nextDate: '2020-01-01' }];
   const brief = botBrief('Foco', state);
-  assert.match(brief, /Proposal id=opportunity en Propuesta, .*siguiente acción Review proposal \(2020-01-01\)/);
+  assert.match(brief, /Proposal id=opportunity en Propuesta stageId=stage-propuesta, .*siguiente acción Review proposal \(2020-01-01\)/);
+  assert.match(brief, /Etapas del espacio:.*stage-propuesta/);
   assert.doesNotMatch(brief, /Closed deal/);
 });
 test('areas map each commercial view and open on their first tab', async () => {
@@ -59,15 +61,15 @@ test('areas map each commercial view and open on their first tab', async () => {
   assert.ok(navigateTargets().includes('Catálogo'));
 });
 test('closed opportunities do not present stale follow-up instructions', () => {
-  for (const stage of ['Ganada', 'Perdida'] as const) assert.equal(pipelineNextAction(emptyState(), { ...opportunity, stage }), null);
+  for (const stageId of ['stage-ganada', 'stage-perdida'] as const) assert.equal(pipelineNextAction(emptyState(), { ...opportunity, stageId }), null);
 });
 
 test('Focus excludes closed opportunities even if they retain overdue work', async () => {
   const { seed } = await import('../lib/crm.ts');
   const { pipelineOpportunities } = await import('../lib/pipeline.ts');
   const state = seed();
-  for (const stage of ['Ganada', 'Perdida'] as const) {
-    state.opportunities[0].stage = stage;
+  for (const stageId of ['stage-ganada', 'stage-perdida'] as const) {
+    state.opportunities[0].stageId = stageId;
     for (const filter of ['all', 'healthy', '1', '2']) {
       assert.ok(!pipelineOpportunities(state, { focus: true, filter }).some(item => item.id === state.opportunities[0].id));
     }
@@ -81,8 +83,8 @@ test('Focus orders equally urgent opportunities by the pending task, and searche
   const state = seed();
   const base = state.opportunities[0];
   state.opportunities = [
-    { ...base, id: 'a', title: 'Alpha', stage: 'Propuesta', nextDate: dateOffset(-10) },
-    { ...base, id: 'b', title: 'Beta', stage: 'Propuesta', nextDate: dateOffset(-1) },
+    { ...base, id: 'a', title: 'Alpha', stageId: 'stage-propuesta', nextDate: dateOffset(-10) },
+    { ...base, id: 'b', title: 'Beta', stageId: 'stage-propuesta', nextDate: dateOffset(-1) },
   ];
   state.followups = [
     { id: 'a-task', opportunityId: 'a', title: 'Acción Ámbar', dueDate: dateOffset(-2), done: false, demo: false },

@@ -5,6 +5,7 @@ import { Bot, Copy, Send, Square, X } from 'lucide-react';
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { eur, risk, today, type State } from '@/lib/crm';
 import { isOpenOpportunity, pipelineNextAction, pipelineOpportunities } from '@/lib/pipeline';
+import { stageName } from '@/lib/pipeline-stages';
 import { areaOf } from '@/lib/areas';
 import type { BotActionInput } from '@/lib/bot-actions';
 
@@ -23,7 +24,7 @@ const promptsByArea: Record<string, string[]> = {
 
 export function botBrief(view: string, state: State) {
   const openLeads = state.leads.filter((lead) => lead.status !== 'Convertido' && lead.status !== 'Descartado');
-  const openOpps = state.opportunities.filter(isOpenOpportunity);
+  const openOpps = state.opportunities.filter(o => isOpenOpportunity(state, o));
   const urgent = pipelineOpportunities(state, { focus: true });
   const next = (item: State['opportunities'][number]) => {
     const action = pipelineNextAction(state, item);
@@ -38,8 +39,12 @@ export function botBrief(view: string, state: State) {
     openLeads.length
       ? `Leads por trabajar: ${openLeads.map((lead) => `${lead.name} (${lead.status}${lead.nextDate ? ', acción ' + lead.nextDate : ''})`).join('; ')}`
       : 'Leads por trabajar: ninguno',
+    `Etapas del espacio: ${state.pipelineStages.filter(s => !s.archived).map(s => `${s.name}(${s.id})`).join(', ')}`,
     openOpps.length
-      ? `Oportunidades abiertas: ${openOpps.map((item) => `${item.title} id=${item.id} en ${item.stage}, ${eur(item.amount)}, ${next(item)}`).join('; ')}`
+      ? `Oportunidades abiertas: ${openOpps.map((item) => {
+          const tags = (item.tagIds || []).map(id => state.opportunityTags.find(tag => tag.id === id)?.name).filter(Boolean).join(',');
+          return `${item.title} id=${item.id} en ${stageName(state, item.stageId)} stageId=${item.stageId}, ${eur(item.amount)}${item.mrr != null ? `, MRR ${eur(item.mrr)}/mes` : ''}${tags ? `, tags=${tags}` : ''}, ${next(item)}`;
+        }).join('; ')}`
       : 'Oportunidades abiertas: ninguna',
     urgent.length
       ? `Piden atención, por prioridad: ${urgent.map((item) => `${item.title}: ${risk(state, item).reason}`).join('; ')}`
@@ -65,7 +70,7 @@ function parseBotAction(text: string): { clean: string; action?: BotActionInput 
 }
 
 function actionLabel(action: BotActionInput) {
-  if (action.kind === 'stage') return `Mover oportunidad a ${action.stage}`;
+  if (action.kind === 'stage') return `Mover oportunidad a ${action.stageId || action.stage}`;
   if (action.kind === 'followup') return `Crear seguimiento: ${action.title}`;
   return `Registrar cobro de factura`;
 }

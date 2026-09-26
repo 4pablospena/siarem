@@ -1,27 +1,29 @@
-import { apply, ensureState, stages, today, type Command, type State } from './crm.ts';
+import { apply, ensureState, today, type Command, type State, type BotActionRecord as CrmBotAction } from './crm.ts';
+import { activeStages, resolveLegacyStageId, stageName } from './pipeline-stages.ts';
 
 export type TeamRole = 'owner' | 'member';
 
 export type BotActionKind = 'stage' | 'followup' | 'pay';
 
-export type BotActionRecord = {
-  id: string;
+export type BotActionRecord = CrmBotAction & {
   requestId: string;
   kind: BotActionKind;
-  at: string;
-  user: string;
   role: TeamRole;
   revision: number;
   result: Record<string, unknown>;
 };
 
-export type StateWithAudit = State & { botActions?: BotActionRecord[] };
+export type StateWithAudit = State;
 
 export function canManageTeam(role: string) {
   return role === 'owner';
 }
 
 export function canDeleteDemo(role: string) {
+  return role === 'owner';
+}
+
+export function canManagePipeline(role: string) {
   return role === 'owner';
 }
 
@@ -34,7 +36,10 @@ export type BotActionInput = {
   kind: BotActionKind;
   opportunityId?: string;
   stage?: string;
+  stageId?: string;
   expectedStage?: string;
+  expectedStageId?: string;
+  lostReasonId?: string;
   title?: string;
   dueDate?: string;
   invoiceId?: string;
@@ -53,24 +58,27 @@ export function runBotAction(
   const state = ensureState(input) as StateWithAudit;
   const actions = [...(state.botActions || [])];
   const prior = actions.find(item => item.requestId === body.requestId);
-  if (prior) return { state, result: prior.result, replayed: true };
+  if (prior) return { state, result: prior.result || {}, replayed: true };
 
   let command: Command;
   let result: Record<string, unknown>;
 
   if (body.kind === 'stage') {
-    if (!body.opportunityId || !body.stage || !(stages as readonly string[]).includes(body.stage)) {
-      throw new Error('Indica la oportunidad y la etapa de destino');
+    const stageId = body.stageId || (body.stage ? resolveLegacyStageId(body.stage) : '');
+    if (!body.opportunityId || !stageId || !activeStages(state).some(stage => stage.id === stageId)) {
+      throw new Error('Indica la oportunidad y una etapa válida del espacio');
     }
     command = {
       action: 'stage',
       id: body.opportunityId,
-      stage: body.stage,
-      expectedStage: body.expectedStage,
+      stageId,
+      expectedStageId: body.expectedStageId || (body.expectedStage ? resolveLegacyStageId(body.expectedStage) : undefined),
+      lostReasonId: body.lostReasonId,
+      user,
     };
     const next = apply(state, command) as StateWithAudit;
-    result = { kind: 'stage', opportunityId: body.opportunityId, stage: body.stage };
-    const record: BotActionRecord = {
+    result = { kind: 'stage', opportunityId: body.opportunityId, stageId, stage: stageName(state, stageId) };
+    next.botActions = [...actions, {
       id: crypto.randomUUID(),
       requestId: body.requestId,
       kind: 'stage',
@@ -79,8 +87,7 @@ export function runBotAction(
       role,
       revision,
       result,
-    };
-    next.botActions = [...actions, record].slice(-100);
+    }].slice(-100);
     return { state: next, result, replayed: false };
   }
 

@@ -1,7 +1,7 @@
 import { getChatGPTUser } from '../../chatgpt-auth';
 import { database, getMembership as membership, listMembers, revokeMember } from '@/db/store';
 import { apply, seed, ensureState } from '@/lib/crm';
-import { canDeleteDemo, canManageTeam, runBotAction, type TeamRole } from '@/lib/bot-actions';
+import { canDeleteDemo, canManagePipeline, canManageTeam, runBotAction, type TeamRole } from '@/lib/bot-actions';
 import { z } from 'zod';
 export const dynamic='force-dynamic';
 const error=(message:string,status=400)=>Response.json({error:message},{status});
@@ -44,7 +44,10 @@ export async function POST(request:Request){try{
    kind:z.enum(['stage','followup','pay']).parse(b.kind),
    opportunityId:b.opportunityId,
    stage:b.stage,
+   stageId:b.stageId,
    expectedStage:b.expectedStage,
+   expectedStageId:b.expectedStageId,
+   lostReasonId:b.lostReasonId,
    title:b.title,
    dueDate:b.dueDate,
    invoiceId:b.invoiceId,
@@ -59,7 +62,8 @@ export async function POST(request:Request){try{
  }
  if(b.revision!==m.revision)return error('Un compañero ha actualizado los datos. Recarga y vuelve a guardar; tu formulario se conserva.',409);
  if(b.action==='deleteDemo'&&!canDeleteDemo(m.role))return error('Solo el propietario puede borrar la demostración',403);
- const next=apply(ensureState(JSON.parse(m.data)),b);const result=await db.prepare('UPDATE tenants SET data=?, revision=revision+1 WHERE id=? AND revision=?').bind(JSON.stringify(next),m.tenant_id,m.revision).run();if(result.meta.changes!==1)return error('Los datos han cambiado. Recarga y vuelve a intentarlo.',409);
+ if(['savePipelineStages','saveOpportunityTags','saveLostReasons'].includes(b.action)&&!canManagePipeline(m.role))return error('Solo el propietario puede configurar el pipeline',403);
+ const next=apply(ensureState(JSON.parse(m.data)),{...b,user:u.displayName});const result=await db.prepare('UPDATE tenants SET data=?, revision=revision+1 WHERE id=? AND revision=?').bind(JSON.stringify(next),m.tenant_id,m.revision).run();if(result.meta.changes!==1)return error('Los datos han cambiado. Recarga y vuelve a intentarlo.',409);
  const fresh=await membership(u.userId);
  return Response.json(await payload(fresh!,u),{headers:{'Cache-Control':'no-store'}});
  }catch(e){if(e instanceof z.ZodError)return error(e.issues.map(i=>{const field=({name:'Nombre',title:'Nombre o referencia',email:'Email',companyId:'Empresa',opportunityId:'Oportunidad',taskId:'Tarea',date:'Fecha',dueDate:'Vencimiento',amount:'Importe',hours:'Horas',cost:'Coste por hora',contactDays:'Días sin contacto',lines:'Líneas de servicio',closeDate:'Fecha de cierre',nextDate:'Fecha del siguiente paso',description:'Servicio',quantity:'Cantidad',price:'Precio',tasks:'Tareas de entrega',role:'Rol',policy:'Política'} as Record<string,string>)[String(i.path.at(-1))]||'Campo obligatorio';return `${field}: ${/^(Expected|Required|Invalid|Number must|String must|Array must)/.test(i.message)?'revisa el valor introducido':i.message}`}).join(' · '));if(e instanceof Error&&e.message==='AUTH')return error('Inicia sesión para continuar',401);console.error(e);return error(e instanceof Error&&!/SQL|D1|database|UNIQUE|JSON/.test(e.message)?e.message:'No se pudo guardar. Conservamos el formulario; vuelve a intentarlo')}
