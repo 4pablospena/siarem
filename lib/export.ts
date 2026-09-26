@@ -3,6 +3,7 @@ import { projectTasks } from './project-tasks.ts';
 import { reportCsv } from './reports.ts';
 import {risk,total,projectCost,companyForOrder,today,ensureState,type State} from './crm.ts';
 import { stageName } from './pipeline-stages.ts';
+import { methodLabel, paymentLabelText, paymentLabel, paymentsOf, projectInvoicedRevenue, isIssued } from './invoices.ts';
 
 export function csvExport(s:State,view:string,query='',filter='all',companyFilter='all',projectId='',extra: PipelineFilterOptions = {}){
  s=ensureState(s);
@@ -30,8 +31,15 @@ export function csvExport(s:State,view:string,query='',filter='all',companyFilte
  }else if(view==='Proyectos'&&projectId){
  const project=s.projects.find(p=>p.id===projectId);if(!project)throw new Error('El proyecto no existe');
  rows=[['Proyecto','Tarea','Estado','Responsable','Inicio','Fecha objetivo'],...projectTasks(s,projectId,query,filter).map(t=>[project.title,t.title,t.status,t.assignee,t.startDate,t.dueDate])];
- }else if(view==='Proyectos')rows=[['Proyecto','Empresa','Pedido EUR','Coste horas EUR','Margen EUR'],...s.projects.filter(p=>scoped(companyForOrder(s,p.orderId))&&match(p.title,p.body,company(companyForOrder(s,p.orderId))?.name)).map(p=>{const o=s.orders.find(o=>o.id===p.orderId);const cost=projectCost(s,p.id);return[p.title,o?company(companyForOrder(s,o.id))?.name:'',o?total(o.lines):'',cost,o?total(o.lines)-cost:'']})];
- else if(view==='Facturas')rows=[['Factura','Empresa','Fecha','Vencimiento','Importe EUR','Estado'],...s.invoices.filter(i=>scoped(companyForOrder(s,i.orderId))&&match(i.title,company(companyForOrder(s,i.orderId))?.name)&&(filter==='all'||(filter==='paid'?i.paid:!i.paid))).map(i=>[i.title,company(companyForOrder(s,i.orderId))?.name,i.date,i.dueDate,i.amount,i.paid?'Cobrada':'Pendiente'])];
+ }else if(view==='Proyectos')rows=[['Proyecto','Empresa','Pedido EUR','Facturado EUR','Coste horas EUR','Margen EUR'],...s.projects.filter(p=>scoped(companyForOrder(s,p.orderId))&&match(p.title,p.body,company(companyForOrder(s,p.orderId))?.name)).map(p=>{const o=s.orders.find(o=>o.id===p.orderId);const cost=projectCost(s,p.id);const billed=projectInvoicedRevenue(s,p.orderId||'');return[p.title,o?company(companyForOrder(s,o.id))?.name:'',o?total(o.lines):'',billed,cost,billed-cost]})];
+ else if(view==='Facturas'){
+  const list=s.invoices.filter(i=>scoped(companyForOrder(s,i.orderId))&&match(i.title,i.number,company(companyForOrder(s,i.orderId))?.name)&&(filter==='all'||(filter==='paid'?i.paid:filter==='overdue'?isIssued(i)&&!i.paid&&i.dueDate<today():!i.paid)));
+  rows=[['Factura','Empresa','Fecha','Vencimiento','Base EUR','IVA %','Total EUR','Estado','Líneas','Cobros'],...list.map(i=>{
+    const lines=(i.lines||[]).map(l=>`${l.description} (${l.quantity}×${l.price})`).join(' | ');
+    const pays=paymentsOf(s,i.id).map(p=>`${p.date} ${p.amount} ${methodLabel(p.method)}`).join(' | ');
+    return [i.number||i.title,company(companyForOrder(s,i.orderId))?.name,i.date,i.dueDate,i.base??i.amount,i.vatRate??0,i.amount,paymentLabelText(paymentLabel(s,i)),lines,pays];
+  })];
+ }
  else throw new Error('Pantalla no válida');
  return '\uFEFF'+rows.map(row=>row.map(value=>'"'+String(value??'').replace(/^[=+@\-\t\r]/,"'$&").replaceAll('"','""')+'"').join(';')).join('\r\n');
 }

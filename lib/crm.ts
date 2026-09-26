@@ -15,6 +15,10 @@ import {
   type StageHistoryEntry,
   TAG_COLORS,
 } from './pipeline-stages.ts';
+import {
+  allocateNumber, billedHourIds, buildInvoiceLines, isDraft, isIssued, isVoid,
+  linesTotal, remainingBase, syncPaid, withVat, type InvoiceLine, type PaymentMethod, VAT_RATES,
+} from './invoices.ts';
 
 /** Display names kept for tests and migration labels; prefer stage ids in new code. */
 export const stages = ['Cualificación','Propuesta','Negociación','Ganada','Perdida'] as const;
@@ -35,7 +39,7 @@ export const leadSources = ['Web','Referencia','Outbound','Evento','Otro'] as co
 export const personRoles = ['Decisor','Técnico','Finanzas','Otro'] as const;
 export const schemas={
  leads:z.object({...base,name,contact:z.string().max(200),email:z.string().email('El correo no es válido').or(z.literal('')),phone:z.string().max(100),source:z.enum(leadSources),status:z.enum(leadStatuses),notes:z.string().max(3000),nextDate:date.or(z.literal('')),createdAt:date,convertedCompanyId:z.string().optional(),convertedOpportunityId:z.string().optional()}),
- companies:z.object({...base,name,email:z.string().email('El correo no es válido').or(z.literal('')),contact:z.string().max(500),phone:z.string().max(100),contactDays:z.number().int().min(1).max(90)}),
+ companies:z.object({...base,name,email:z.string().email('El correo no es válido').or(z.literal('')),contact:z.string().max(500),phone:z.string().max(100),contactDays:z.number().int().min(1).max(90),taxId:z.string().max(40).default(''),address:z.string().max(500).default(''),paymentDays:z.number().int().min(1).max(365).default(30)}),
  people:z.object({...base,companyId:name,name,email:z.string().email('El correo no es válido').or(z.literal('')),phone:z.string().max(100),role:z.enum(personRoles),opportunityId:z.string().max(80).default('')}),
  services:z.object({...base,name,price:money,policy:z.enum(['fixed','milestones','hours']),tasks:z.string().trim().min(1,'Añade al menos una tarea de entrega').max(5000)}),
  opportunities:z.object({
@@ -53,18 +57,32 @@ export const schemas={
  followups:z.object({...base,opportunityId:name,title:name,dueDate:date,done:z.boolean()}),
  quotes:z.object({...base,opportunityId:name,title:name,lines:z.array(line).min(1).max(100)}),
  orders:z.object({...base,quoteId:name,title:name,lines:z.array(line).min(1).max(100),confirmed:z.boolean()}),
- projects:z.object({...base,orderId:z.string().max(80).default(''),title:name,body:z.string().max(2000).default('')}),
+ projects:z.object({...base,orderId:z.string().max(80).default(''),title:name,body:z.string().max(2000).default(''),tagIds:z.array(z.string()).default([]),assigneeUserId:z.string().max(120).default('')}),
  delivery:z.object({...base,projectId:name,lineIndex:z.number().int().min(0).default(0),title:name,done:z.boolean(),status:z.enum(taskStatuses).default('Por hacer'),assignee:z.string().max(120).default(''),startDate:date.or(z.literal('')).default(''),dueDate:date.or(z.literal('')).default('')}),
  hours:z.object({...base,taskId:name,date,hours:z.number().positive().max(24),cost:money,notes:z.string().max(500)}),
- invoices:z.object({...base,orderId:name,title:name,date,dueDate:date,amount:money,policy:z.enum(['fixed','milestones','hours']),hourIds:z.array(z.string()),paid:z.boolean()}),
- payments:z.object({...base,invoiceId:name,date,amount:money})
+ invoices:z.object({
+  ...base,orderId:name,title:name,date,dueDate:date,amount:money,
+  policy:z.enum(['fixed','milestones','hours']),hourIds:z.array(z.string()),paid:z.boolean(),
+  status:z.enum(['draft','issued','void']).default('issued'),
+  kind:z.enum(['invoice','credit']).default('invoice'),
+  rectifiesId:z.string().max(80).default(''),
+  number:z.string().max(80).default(''),
+  base:money.default(0),
+  vatRate:z.number().refine(v=>[0,4,10,21].includes(v),'Tipo de IVA no válido').default(0),
+  vatAmount:money.default(0),
+  lines:z.array(z.object({description:name,quantity:z.number().positive().max(1e6),price:money,amount:money})).default([]),
+  sentAt:z.string().max(40).default(''),
+ }),
+ payments:z.object({...base,invoiceId:name,date,amount:money,method:z.enum(['transfer','card','cash']).default('transfer'),note:z.string().max(500).default('')})
 };
 export type Kind=keyof typeof schemas;
 export type Entity={ [K in Kind]:z.infer<typeof schemas[K]> };
 export type State={ [K in Kind]:Entity[K][] } & {
   pipelineStages: PipelineStage[];
   opportunityTags: OpportunityTag[];
+  projectTags: OpportunityTag[];
   lostReasons: LostReason[];
+  invoiceSeries: { year: number; last: number }[];
   botActions?: BotActionRecord[];
 };
 
@@ -86,7 +104,9 @@ export const emptyState=():State=>({
   ...(Object.fromEntries(Object.keys(schemas).map(k=>[k,[]])) as unknown as { [K in Kind]:Entity[K][] }),
   pipelineStages: defaultPipelineStages(),
   opportunityTags: [],
+  projectTags: [],
   lostReasons: defaultLostReasons(),
+  invoiceSeries: [],
   botActions: [],
 });
 
@@ -155,12 +175,14 @@ export function ensureState(input: State | Partial<State>): State {
     .map((stage, index) => ({ ...stage, order: index, tone: index }))
     .sort((a, b) => a.order - b.order);
 
-  state.opportunityTags = (Array.isArray(input.opportunityTags) ? input.opportunityTags : []).map(tag => ({
+  const asTags = (tags: OpportunityTag[] | undefined) => (Array.isArray(tags) ? tags : []).map(tag => ({
     id: tag.id,
     name: String(tag.name || '').trim() || 'Etiqueta',
-    color: TAG_COLORS.includes(tag.color) ? tag.color : 'slate',
+    color: TAG_COLORS.includes(tag.color) ? tag.color : 'slate' as OpportunityTag['color'],
     archived: !!tag.archived,
   }));
+  state.opportunityTags = asTags(input.opportunityTags);
+  state.projectTags = asTags(input.projectTags);
   state.lostReasons = (Array.isArray(input.lostReasons) && input.lostReasons.length
     ? input.lostReasons
     : defaultLostReasons()).map(reason => ({
@@ -171,9 +193,11 @@ export function ensureState(input: State | Partial<State>): State {
 
   for (const opportunity of state.opportunities) migrateOpportunity(opportunity as Entity['opportunities'] & {stage?: string}, state.pipelineStages);
   for (const project of state.projects) {
-    const row = project as Entity['projects'] & {orderId?: string; body?: string};
+    const row = project as Entity['projects'] & {orderId?: string; body?: string; tagIds?: string[]; assigneeUserId?: string};
     row.orderId = row.orderId || '';
     row.body = row.body ?? '';
+    row.tagIds = Array.isArray(row.tagIds) ? row.tagIds.filter(Boolean) : [];
+    row.assigneeUserId = row.assigneeUserId || '';
   }
   for (const task of state.delivery) {
     const row = task as Entity['delivery'] & {status?: string; assignee?: string; startDate?: string; dueDate?: string};
@@ -193,6 +217,38 @@ export function ensureState(input: State | Partial<State>): State {
     state.people.push({id:`migrated-${company.id}`,demo:company.demo,companyId:company.id,name:company.contact,email:company.email||'',phone:company.phone||'',role:'Decisor',opportunityId:''});
   }
   if (!Array.isArray(state.botActions)) state.botActions = [];
+  if (!Array.isArray(state.invoiceSeries)) state.invoiceSeries = [];
+  for (const company of state.companies) {
+    const row = company as Entity['companies'] & { taxId?: string; address?: string; paymentDays?: number };
+    row.taxId = row.taxId || '';
+    row.address = row.address || '';
+    row.paymentDays = Number.isInteger(row.paymentDays) && row.paymentDays! > 0 ? Math.min(365, row.paymentDays!) : 30;
+  }
+  for (const invoice of state.invoices) {
+    const row = invoice as Entity['invoices'] & Record<string, unknown>;
+    row.status = (['draft','issued','void'].includes(String(row.status))?row.status:'issued') as Entity['invoices']['status'];
+    row.kind = (['invoice','credit'].includes(String(row.kind))?row.kind:'invoice') as Entity['invoices']['kind'];
+    row.rectifiesId = (row.rectifiesId as string) || '';
+    row.number = (row.number as string) || (row.status === 'issued' ? String(row.title || '') : '');
+    row.lines = Array.isArray(row.lines) ? row.lines : [];
+    row.sentAt = (row.sentAt as string) || '';
+    if (row.base == null) {
+      row.base = Number(row.amount) || 0;
+      row.vatRate = 0;
+      row.vatAmount = 0;
+    } else {
+      row.base = Number(row.base) || 0;
+      row.vatRate = [0, 4, 10, 21].includes(Number(row.vatRate)) ? Number(row.vatRate) : 0;
+      row.vatAmount = Number(row.vatAmount) || 0;
+    }
+    row.hourIds = Array.isArray(row.hourIds) ? row.hourIds : [];
+  }
+  for (const payment of state.payments) {
+    const row = payment as Entity['payments'] & { method?: string; note?: string };
+    row.method = (['transfer', 'card', 'cash'].includes(row.method || '') ? row.method : 'transfer') as Entity['payments']['method'];
+    row.note = row.note || '';
+  }
+  for (const invoice of state.invoices) syncPaid(state, invoice);
   return state;
 }
 
@@ -263,7 +319,7 @@ function appendStageHistory(o:Entity['opportunities'], fromStageId:string, toSta
 
 export type Command={
   action:string;kind?:Kind;record?:unknown;id?:string;stage?:string;stageId?:string;expectedStage?:string;expectedStageId?:string;
-  policy?:string;amount?:number;title?:string;date?:string;dueDate?:string;hourIds?:string[];
+  policy?:string;amount?:number;title?:string;date?:string;dueDate?:string;hourIds?:string[];vatRate?:number;status?:'draft'|'issued';method?:PaymentMethod;note?:string;draft?:boolean;
   stages?:PipelineStage[];tags?:OpportunityTag[];reasons?:LostReason[];lostReasonId?:string;user?:string;rank?:number;direction?:'up'|'down';beforeId?:string|null;priority?:number;ownerUserId?:string;
 };
 
@@ -278,6 +334,7 @@ export function apply(s0:State,cmd:Command):State{
   if(k==='leads'){if(old){r.createdAt=old.createdAt;r.convertedCompanyId=old.convertedCompanyId;r.convertedOpportunityId=old.convertedOpportunityId;if(old.status==='Convertido')r.status='Convertido'}else{r.createdAt=today();if(r.status==='Convertido')fail('Convierte el lead para crear la empresa y la oportunidad')}}
   if(k==='people'){get(s,'companies',r.companyId);if(r.opportunityId&&get(s,'opportunities',r.opportunityId).companyId!==r.companyId)fail('La oportunidad no corresponde a la empresa')}
   if(k==='services'){/* catalog entry */}
+  if(k==='projects')r.tagIds=(r.tagIds||[]).filter((tagId:string)=>s.projectTags.some(t=>t.id===tagId&&!t.archived));
   if(k==='opportunities'){
     get(s,'companies',r.companyId);
     const stage=assertActiveStage(s,r.stageId);
@@ -310,7 +367,7 @@ export function apply(s0:State,cmd:Command):State{
   if(k==='orders'){get(s,'quotes',r.quoteId);if(old?.confirmed){if(r.quoteId!==old.quoteId||JSON.stringify(r.lines)!==JSON.stringify(old.lines))fail('Las líneas de un pedido confirmado quedan bloqueadas para conservar sus facturas y horas');r.confirmed=true;const project=s.projects.find(p=>p.orderId===r.id);if(project)project.title=r.title}else r.confirmed=false;if(s.orders.some(o=>o.quoteId===r.quoteId&&o.id!==r.id))fail('Este presupuesto ya tiene un pedido')}
   if(k==='projects'){if(r.orderId&&!s.orders.some(o=>o.id===r.orderId))fail('El pedido no existe');if(old?.orderId&&r.orderId!==old.orderId)fail('Este proyecto sigue ligado a su pedido');if(!old&&r.orderId&&s.projects.some(p=>p.orderId===r.orderId))fail('Ese pedido ya tiene un proyecto')}
   if(k==='delivery'){const p=get(s,'projects',r.projectId);if(p.orderId){const o=get(s,'orders',p.orderId);if(r.lineIndex>=o.lines.length)fail('Línea de pedido no válida')}else r.lineIndex=0;r.done=r.status==='Hecho';if(r.startDate&&r.dueDate&&r.startDate>r.dueDate)fail('La fecha objetivo no puede ser anterior al inicio');if(old&&(r.projectId!==old.projectId||r.lineIndex!==old.lineIndex)&&s.hours.some(h=>h.taskId===r.id))fail('No puedes mover una tarea con horas imputadas')}
-  if(k==='hours'){get(s,'delivery',r.taskId);if(s.invoices.some(i=>i.hourIds.includes(r.id)))fail('Estas horas ya están facturadas');if(r.date>today())fail('No puedes imputar horas futuras')}
+  if(k==='hours'){get(s,'delivery',r.taskId);if(billedHourIds(s).has(r.id))fail('Estas horas ya están facturadas');if(r.date>today())fail('No puedes imputar horas futuras')}
   (s[k!] as any[])=(s[k!] as any[]).filter(x=>x.id!==r.id).concat(r);
  }else if(cmd.action==='convertLead'){
   const lead=get(s,'leads',cmd.id!);
@@ -319,7 +376,7 @@ export function apply(s0:State,cmd:Command):State{
   const company=s.companies.find(c=>c.id===lead.convertedCompanyId)||s.companies.find(c=>c.demo===lead.demo&&(sameText(c.name,lead.name)||sameText(c.email,lead.email)));
   const companyId=company?.id||lead.convertedCompanyId||id();
   if(company){for(const field of ['contact','email','phone'] as const)if(!company[field]&&lead[field])company[field]=lead[field]}
-  else s.companies.push({id:companyId,demo:lead.demo,name:lead.name,email:lead.email,contact:lead.contact,phone:lead.phone,contactDays:30});
+  else s.companies.push({id:companyId,demo:lead.demo,name:lead.name,email:lead.email,contact:lead.contact,phone:lead.phone,contactDays:30,taxId:'',address:'',paymentDays:30});
   const opportunityId=id();
   const openId=firstOpenStageId(s);
   s.opportunities.push({id:opportunityId,demo:lead.demo,companyId,title:cmd.title||`Oportunidad · ${lead.name}`,amount:0,stageId:openId,closeDate:dateOffset(30),nextStep:lead.nextDate?'Contactar en la fecha prevista':'Preparar la primera reunión',nextDate:lead.nextDate||today(),createdAt:today(),tagIds:[],mrr:null,ownerUserId:'',lostReasonId:'',rank:maxRankInStage(s,openId)+1,priority:0,stageHistory:[]});
@@ -398,6 +455,19 @@ export function apply(s0:State,cmd:Command):State{
     if(tag.archived)for(const o of s.opportunities)o.tagIds=(o.tagIds||[]).filter(id=>id!==tag.id);
   }
   s.opportunityTags=next;
+ }else if(cmd.action==='saveProjectTags'){
+  const next=(cmd.tags||[]).map(tag=>({
+    id:tag.id||id(),
+    name:String(tag.name||'').trim(),
+    color:(TAG_COLORS.includes(tag.color as OpportunityTag['color'])?tag.color:'slate') as OpportunityTag['color'],
+    archived:!!tag.archived,
+  }));
+  for(const tag of next)if(!tag.name)fail('El nombre de la etiqueta es obligatorio');
+  if(new Set(next.map(t=>t.id)).size!==next.length)fail('Hay etiquetas duplicadas');
+  for(const tag of next){
+    if(tag.archived)for(const project of s.projects)project.tagIds=(project.tagIds||[]).filter(id=>id!==tag.id);
+  }
+  s.projectTags=next;
  }else if(cmd.action==='saveLostReasons'){
   const next=(cmd.reasons||[]).map(reason=>({id:reason.id||id(),name:String(reason.name||'').trim(),archived:!!reason.archived}));
   for(const reason of next)if(!reason.name)fail('El motivo es obligatorio');
@@ -409,7 +479,7 @@ export function apply(s0:State,cmd:Command):State{
   const q=get(s,'quotes',cmd.id!);let o=s.orders.find(o=>o.quoteId===q.id);
   if(o?.confirmed)fail('El pedido ya está confirmado');
   if(!o){o={id:id(),demo:q.demo,quoteId:q.id,title:q.title,lines:structuredClone(q.lines),confirmed:false};s.orders.push(o)}
-  o.confirmed=true;const p={id:id(),demo:o.demo,orderId:o.id,title:o.title,body:''};s.projects.push(p);
+  o.confirmed=true;const p={id:id(),demo:o.demo,orderId:o.id,title:o.title,body:'',tagIds:[] as string[],assigneeUserId:''};s.projects.push(p);
   o.lines.forEach((l,n)=>l.tasks.split('\n').map(x=>x.trim()).filter(Boolean).forEach(title=>s.delivery.push({id:id(),demo:o!.demo,projectId:p.id,lineIndex:n,title,done:false,status:'Por hacer',assignee:'',startDate:'',dueDate:''})));
   const opportunity=get(s,'opportunities',q.opportunityId);
   const won=wonStageId(s);
@@ -417,22 +487,137 @@ export function apply(s0:State,cmd:Command):State{
  }else if(cmd.action==='invoice'){
   const o=get(s,'orders',cmd.id!);if(!o.confirmed)fail('Confirma el pedido antes de facturar');
   const policy=z.enum(['fixed','milestones','hours']).parse(cmd.policy);
-  const eligible=o.lines.map((l,i)=>({l,i})).filter(x=>x.l.policy===policy);if(!eligible.length)fail('El pedido no tiene líneas con esta política');
-  let amount=0;let hourIds:string[]=[];
+  if(!o.lines.some(l=>l.policy===policy))fail('El pedido no tiene líneas con esta política');
+  const asDraft=cmd.status==='draft'||cmd.draft===true;
+  const vatRate=VAT_RATES.includes(Number(cmd.vatRate) as (typeof VAT_RATES)[number])?Number(cmd.vatRate):0;
+  let hourIds:string[]=[];
+  let base=0;
+  let lines:InvoiceLine[]=[];
   if(policy==='hours'){
-   const selected=z.array(z.string()).min(1,'Selecciona horas pendientes').parse(cmd.hourIds);if(new Set(selected).size!==selected.length)fail('Horas duplicadas');
-   const hs=selected.map(h=>get(s,'hours',h));for(const h of hs){const t=get(s,'delivery',h.taskId);const p=get(s,'projects',t.projectId);if(p.orderId!==o.id||o.lines[t.lineIndex].policy!=='hours')fail('Las horas no corresponden a esta política o pedido');if(s.invoices.some(i=>i.hourIds.includes(h.id)))fail('Hay horas ya facturadas');amount+=h.hours*o.lines[t.lineIndex].price}hourIds=selected;
+   const selected=z.array(z.string()).min(1,'Selecciona horas pendientes').parse(cmd.hourIds);
+   if(new Set(selected).size!==selected.length)fail('Horas duplicadas');
+   const billed=billedHourIds(s);
+   for(const hId of selected){
+    const h=get(s,'hours',hId);const t=get(s,'delivery',h.taskId);const p=get(s,'projects',t.projectId);
+    if(p.orderId!==o.id||o.lines[t.lineIndex].policy!=='hours')fail('Las horas no corresponden a esta política o pedido');
+    if(billed.has(hId))fail('Hay horas ya facturadas');
+   }
+   hourIds=selected;
+   lines=buildInvoiceLines(s,o.id,policy,{hourIds});
+   base=linesTotal(lines);
   }else{
-   const budget=total(eligible.map(x=>x.l));const billed=s.invoices.filter(i=>i.orderId===o.id&&i.policy===policy).reduce((a,i)=>a+i.amount,0);const remaining=round(budget-billed);
-   amount=policy==='fixed'?remaining:money.positive('El importe debe ser mayor que cero').parse(cmd.amount);
-   if(amount<=0||amount>remaining)fail(`Importe pendiente: ${eur(remaining)}`);
+   const remaining=remainingBase(s,o.id,policy);
+   base=policy==='fixed'?remaining:money.positive('El importe debe ser mayor que cero').parse(cmd.amount);
+   if(base<=0||base>remaining)fail(`Importe pendiente: ${eur(remaining)}`);
+   lines=buildInvoiceLines(s,o.id,policy,{amount:base});
+   if(policy==='fixed')base=linesTotal(lines);
   }
-  if(round(amount)<=0)fail('El importe de la factura debe ser mayor que cero');
-  s.invoices.push(schemas.invoices.parse({id:id(),demo:o.demo,orderId:o.id,title:cmd.title,date:cmd.date,dueDate:cmd.dueDate,amount:round(amount),policy,hourIds,paid:false}));
+  if(base<=0)fail('El importe de la factura debe ser mayor que cero');
+  const totals=withVat(base,vatRate);
+  const issueDate=date.parse(cmd.date!);
+  const due=date.parse(cmd.dueDate!);
+  if(due<issueDate)fail('El vencimiento no puede ser anterior a la factura');
+  let number='';let title=String(cmd.title||'').trim();
+  let status:'draft'|'issued'=asDraft?'draft':'issued';
+  if(!asDraft){
+   number=allocateNumber(s,issueDate);
+   title=number;
+  }else if(!title)title='Borrador';
+  s.invoices.push(schemas.invoices.parse({
+   id:id(),demo:o.demo,orderId:o.id,title,date:issueDate,dueDate:due,
+   amount:totals.amount,base:totals.base,vatRate:totals.vatRate,vatAmount:totals.vatAmount,
+   policy,hourIds,paid:false,status,kind:'invoice',rectifiesId:'',number,lines,sentAt:'',
+  }));
+ }else if(cmd.action==='issueInvoice'){
+  const i=get(s,'invoices',cmd.id!);
+  if(!isDraft(i))fail('Solo se puede emitir un borrador');
+  if(i.policy==='hours'){
+   const billed=billedHourIds(s);
+   for(const hId of i.hourIds)if(billed.has(hId))fail('Hay horas ya facturadas');
+  }else if(i.kind!=='credit'){
+   const remaining=remainingBase(s,i.orderId,i.policy);
+   if((i.base||i.amount)>remaining)fail(`Importe pendiente: ${eur(remaining)}`);
+  }
+  const issueDate=cmd.date?date.parse(cmd.date):i.date;
+  const due=cmd.dueDate?date.parse(cmd.dueDate):i.dueDate;
+  if(due<issueDate)fail('El vencimiento no puede ser anterior a la factura');
+  i.date=issueDate;i.dueDate=due;
+  i.number=allocateNumber(s,issueDate);
+  i.title=i.number;
+  i.status='issued';
+  syncPaid(s,i);
  }else if(cmd.action==='editInvoice'){
-  const i=get(s,'invoices',cmd.id!);i.title=name.parse(cmd.title);i.date=date.parse(cmd.date);i.dueDate=date.parse(cmd.dueDate);
+  const i=get(s,'invoices',cmd.id!);
+  if(isVoid(i))fail('Una factura anulada no se edita');
+  if(isDraft(i)){
+   if(cmd.title!=null)i.title=name.parse(cmd.title);
+   if(cmd.date)i.date=date.parse(cmd.date);
+   if(cmd.dueDate)i.dueDate=date.parse(cmd.dueDate);
+   if(cmd.vatRate!=null&&VAT_RATES.includes(Number(cmd.vatRate) as (typeof VAT_RATES)[number])){
+    const totals=withVat(i.base||i.amount,Number(cmd.vatRate));
+    i.base=totals.base;i.vatRate=totals.vatRate;i.vatAmount=totals.vatAmount;i.amount=totals.amount;
+   }
+   if(cmd.amount!=null&&i.policy==='milestones'){
+    const remaining=remainingBase(s,i.orderId,i.policy);
+    const base=money.positive().parse(cmd.amount);
+    if(base>remaining)fail(`Importe pendiente: ${eur(remaining)}`);
+    i.lines=buildInvoiceLines(s,i.orderId,i.policy,{amount:base});
+    const totals=withVat(base,i.vatRate||0);
+    i.base=totals.base;i.vatAmount=totals.vatAmount;i.amount=totals.amount;
+   }
+   if(cmd.hourIds&&i.policy==='hours'){
+    const selected=z.array(z.string()).min(1).parse(cmd.hourIds);
+    const billed=billedHourIds({invoices:s.invoices.filter(x=>x.id!==i.id)});
+    for(const hId of selected){get(s,'hours',hId);if(billed.has(hId))fail('Hay horas ya facturadas')}
+    i.hourIds=selected;
+    i.lines=buildInvoiceLines(s,i.orderId,i.policy,{hourIds:selected});
+    const totals=withVat(linesTotal(i.lines),i.vatRate||0);
+    i.base=totals.base;i.vatAmount=totals.vatAmount;i.amount=totals.amount;
+   }
+  }else{
+   if(cmd.date)i.date=date.parse(cmd.date);
+   if(cmd.dueDate)i.dueDate=date.parse(cmd.dueDate);
+  }
+  if(i.dueDate<i.date)fail('El vencimiento no puede ser anterior a la factura');
  }else if(cmd.action==='pay'){
-  const i=get(s,'invoices',cmd.id!);if(i.paid)fail('La factura ya está cobrada');if(cmd.date!>today()||cmd.date!<i.date)fail('La fecha de cobro debe estar entre la emisión y hoy');s.payments.push({id:id(),demo:i.demo,invoiceId:i.id,date:date.parse(cmd.date),amount:i.amount});i.paid=true;
+  const i=get(s,'invoices',cmd.id!);
+  if(!isIssued(i))fail('Solo se cobra una factura emitida');
+  if(i.paid)fail('La factura ya está cobrada');
+  const payDate=date.parse(cmd.date!);
+  if(payDate>today()||payDate<i.date)fail('La fecha de cobro debe estar entre la emisión y hoy');
+  const due=round(i.amount-s.payments.filter(p=>p.invoiceId===i.id).reduce((a,p)=>a+p.amount,0));
+  if(due<=0)fail('La factura ya está cobrada');
+  const amount=cmd.amount==null?due:money.positive('El importe debe ser mayor que cero').parse(cmd.amount);
+  if(amount>due)fail(`El cobro supera el saldo pendiente (${eur(due)})`);
+  const method=(['transfer','card','cash'].includes(String(cmd.method))?cmd.method:'transfer') as PaymentMethod;
+  s.payments.push({id:id(),demo:i.demo,invoiceId:i.id,date:payDate,amount:round(amount),method,note:String(cmd.note||'').slice(0,500)});
+  syncPaid(s,i);
+ }else if(cmd.action==='voidPayment'){
+  const payment=s.payments.find(p=>p.id===cmd.id);
+  if(!payment)fail('El cobro no existe');
+  else{
+   const i=get(s,'invoices',payment.invoiceId);
+   s.payments=s.payments.filter(p=>p.id!==cmd.id);
+   syncPaid(s,i);
+  }
+ }else if(cmd.action==='creditInvoice'){
+  const original=get(s,'invoices',cmd.id!);
+  if(!isIssued(original)||original.kind==='credit')fail('Solo se anula una factura emitida');
+  if(s.payments.some(p=>p.invoiceId===original.id))fail('Anula los cobros antes de rectificar la factura');
+  const issueDate=date.parse(cmd.date||today());
+  const number=allocateNumber(s,issueDate);
+  original.status='void';
+  original.paid=false;
+  s.invoices.push(schemas.invoices.parse({
+   id:id(),demo:original.demo,orderId:original.orderId,title:number,date:issueDate,dueDate:issueDate,
+   amount:original.amount,base:original.base,vatRate:original.vatRate,vatAmount:original.vatAmount,
+   policy:original.policy,hourIds:[],paid:true,status:'issued',kind:'credit',rectifiesId:original.id,
+   number,lines:structuredClone(original.lines),sentAt:'',
+  }));
+ }else if(cmd.action==='markInvoiceSent'){
+  const i=get(s,'invoices',cmd.id!);
+  if(!isIssued(i))fail('Solo se envía una factura emitida');
+  i.sentAt=cmd.date||today();
  }else if(cmd.action==='deleteDemo'){
   const demoIds=new Set<string>();
   for(const k of Object.keys(schemas) as Kind[])for(const row of s[k] as any[])if(row.demo)demoIds.add(row.id);
@@ -446,12 +631,21 @@ export function apply(s0:State,cmd:Command):State{
   const k=cmd.kind!;if(!schemas[k])fail('Registro no válido');get(s,k,cmd.id!);
   const links:Partial<Record<Kind,[Kind,string][]>>={companies:[['opportunities','companyId'],['interactions','companyId'],['people','companyId']],opportunities:[['quotes','opportunityId'],['interactions','opportunityId'],['followups','opportunityId']],quotes:[['orders','quoteId']],orders:[['projects','orderId'],['invoices','orderId']],projects:[['delivery','projectId']],delivery:[['hours','taskId']]};
   if(links[k]?.some(([child,key])=>(s[child] as any[]).some(r=>r[key]===cmd.id)))fail('Tiene registros vinculados. Elimínalos primero para conservar la trazabilidad');
-  if(k==='hours'&&s.invoices.some(i=>i.hourIds.includes(cmd.id!)))fail('Estas horas ya están facturadas');
-  if(k==='payments')fail('El cobro registrado no puede borrarse desde esta acción');
-  if(k==='invoices')s.payments=s.payments.filter(p=>p.invoiceId!==cmd.id);
+  if(k==='hours'&&billedHourIds(s).has(cmd.id!))fail('Estas horas ya están facturadas');
+  if(k==='payments')fail('Usa anular cobro para quitar un pago');
+  if(k==='invoices'){
+    const invoice=get(s,'invoices',cmd.id!);
+    if(!isDraft(invoice))fail('Solo se pueden borrar borradores. Anula una factura emitida con una rectificativa');
+    s.payments=s.payments.filter(p=>p.invoiceId!==cmd.id);
+  }
   (s[k] as any[])=(s[k] as any[]).filter(x=>x.id!==cmd.id);
  }else fail('Acción no reconocida');
- for(const i of s.invoices){if(i.dueDate<i.date)fail('El vencimiento no puede ser anterior a la factura');if(s.payments.some(p=>p.invoiceId===i.id&&p.date<i.date))fail('La emisión no puede ser posterior al cobro');if(s.invoices.some(j=>j.id!==i.id&&j.title===i.title))fail('Ya existe una factura con esta referencia')}
+ for(const i of s.invoices){
+  if(i.dueDate<i.date)fail('El vencimiento no puede ser anterior a la factura');
+  if(s.payments.some(p=>p.invoiceId===i.id&&p.date<i.date))fail('La emisión no puede ser posterior al cobro');
+  if(i.number&&s.invoices.some(j=>j.id!==i.id&&j.number&&j.number===i.number))fail('Ya existe una factura con esta referencia');
+  if(!i.number&&i.title&&s.invoices.some(j=>j.id!==i.id&&!j.number&&j.title===i.title))fail('Ya existe una factura con esta referencia');
+ }
  for(const o of s.opportunities)if(o.amount!==round(o.amount))fail('El importe admite como máximo dos decimales');
  return s;
 }
@@ -463,9 +657,10 @@ export function seed():State{
   {id:'demo-lead-contacted',demo,name:'Taller Oeste',contact:'Andrés Vidal',email:'andres@talleroeste.example',phone:'',source:'Web',status:'Contactado',notes:'Pidió una llamada para ver si el seguimiento comercial les encaja. La fecha ya pasó.',nextDate:dateOffset(-1),createdAt:dateOffset(-6)},
   {id:'demo-lead-ready',demo,name:'Clínica Bruma',contact:'Elena Ruiz',email:'elena@bruma.example',phone:'',source:'Evento',status:'Cualificado',notes:'Quiere una propuesta para ordenar presupuestos y seguimientos. Orientación: 3.200 €.',nextDate:dateOffset(1),createdAt:dateOffset(-2)}
  );
- s.companies.push({id:'demo-company',demo,name:'Prueba Peña',email:'',contact:'Responsable de operaciones',phone:'',contactDays:30});
+ s.companies.push({id:'demo-company',demo,name:'Prueba Peña',email:'',contact:'Responsable de operaciones',phone:'',contactDays:30,taxId:'B12345678',address:'Calle Ejemplo 1, Madrid',paymentDays:30});
  s.services.push({id:'demo-service',demo,name:'Servicio a medida',price:2400,policy:'fixed',tasks:'Preparación\nEjecución\nEntrega y revisión'});
  s.opportunityTags.push({id:'demo-tag-prioridad',name:'Prioridad',color:'amber',archived:false},{id:'demo-tag-saas',name:'SaaS',color:'blue',archived:false});
+ s.projectTags.push({id:'demo-ptag-entrega',name:'Entrega',color:'green',archived:false},{id:'demo-ptag-interno',name:'Interno',color:'violet',archived:false});
  s.opportunities.push(
   {id:'demo-opportunity',demo,companyId:'demo-company',title:'Servicio a medida · segunda fase',amount:4800,stageId:'stage-propuesta',closeDate:dateOffset(5),nextStep:'Revisar la propuesta con el responsable',nextDate:dateOffset(-2),createdAt:dateOffset(-40),tagIds:['demo-tag-prioridad'],mrr:320,ownerUserId:'',lostReasonId:'',rank:1,priority:0,stageHistory:[]},
   {id:'demo-won',demo,companyId:'demo-company',title:'Servicio a medida · primera fase',amount:2400,stageId:'stage-ganada',closeDate:dateOffset(-12),nextStep:'Revisar la entrega inicial',nextDate:dateOffset(4),createdAt:dateOffset(-50),tagIds:[],mrr:null,ownerUserId:'',lostReasonId:'',rank:1,priority:0,stageHistory:[]}
@@ -474,6 +669,6 @@ export function seed():State{
  s.interactions.push(...[-18,-10,-4].map((n,i)=>({id:'demo-contact-'+i,demo,companyId:'demo-company',opportunityId:'demo-opportunity',kind:['Llamada','Reunión','Email'][i] as Entity['interactions']['kind'],date:dateOffset(n),notes:['Primera conversación sobre las necesidades de la empresa.','Revisamos el alcance de la segunda fase y las fechas.','Propuesta enviada. Pendiente de revisar condiciones.'][i]})));
  s.followups.push({id:'demo-followup',demo,opportunityId:'demo-opportunity',title:'Llamar para revisar la propuesta',dueDate:dateOffset(-2),done:false});
  s.quotes.push({id:'demo-quote',demo,opportunityId:'demo-won',title:'P-001 · Servicio a medida',lines:[{description:'Servicio a medida · primera fase',quantity:1,price:2400,policy:'fixed',tasks:'Preparación\nEjecución\nEntrega y revisión'}]});
- const withOrder=apply(s,{action:'confirm',id:'demo-quote'});const plan=[[-20,-12,'Hecho'],[-6,4,'En curso'],[5,18,'Por hacer']] as const;withOrder.delivery.forEach((task,index)=>{const [from,to,status]=plan[index]??[0,7,'Por hacer'];task.startDate=dateOffset(from);task.dueDate=dateOffset(to);task.status=status;task.done=status==='Hecho'});const task=withOrder.delivery[0];withOrder.hours.push({id:'demo-hours',demo,taskId:task.id,date:dateOffset(-1),hours:4,cost:35,notes:'Preparación de la primera entrega'});
+ const withOrder=apply(s,{action:'confirm',id:'demo-quote'});withOrder.projects[0].tagIds=['demo-ptag-entrega'];const plan=[[-20,-12,'Hecho'],[-6,4,'En curso'],[5,18,'Por hacer']] as const;withOrder.delivery.forEach((task,index)=>{const [from,to,status]=plan[index]??[0,7,'Por hacer'];task.startDate=dateOffset(from);task.dueDate=dateOffset(to);task.status=status;task.done=status==='Hecho'});const task=withOrder.delivery[0];withOrder.hours.push({id:'demo-hours',demo,taskId:task.id,date:dateOffset(-1),hours:4,cost:35,notes:'Preparación de la primera entrega'});
  return apply(withOrder,{action:'invoice',id:withOrder.orders[0].id,policy:'fixed',title:'F-001 · Servicio a medida',date:today(),dueDate:dateOffset(30)});
 }

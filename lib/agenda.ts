@@ -1,6 +1,7 @@
 import { today, companyForOrder, ensureState, type State } from './crm.ts';
 import { isOpenOpportunity } from './pipeline.ts';
 import { stageName } from './pipeline-stages.ts';
+import { isIssued } from './invoices.ts';
 
 export type AgendaKind = 'followup' | 'close' | 'interaction' | 'invoice' | 'task';
 
@@ -79,12 +80,12 @@ export function agendaWeek(input: State, anchor = today()): { range: ReturnType<
     });
   }
 
-  for (const inv of s.invoices.filter(x => !x.paid && inWeek(x.dueDate))) {
+  for (const inv of s.invoices.filter(x => isIssued(x) && !x.paid && (inWeek(x.dueDate) || x.dueDate < range.start))) {
     items.push({
       id: `invoice-${inv.id}`,
-      date: inv.dueDate,
+      date: inv.dueDate < range.start ? range.start : inv.dueDate,
       kind: 'invoice',
-      title: 'Vence factura · ' + inv.title,
+      title: (inv.dueDate < range.start ? 'Factura vencida · ' : 'Vence factura · ') + inv.title,
       detail: String(inv.amount),
       companyId: companyForOrder(s, inv.orderId),
       invoiceId: inv.id,

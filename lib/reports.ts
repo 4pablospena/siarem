@@ -1,6 +1,7 @@
-import { today, dateOffset, risk, total, projectCost, companyForOrder, eur, ensureState, isWonStage, isLostStage, stageProbability, round, type State } from './crm.ts';
+import { today, risk, projectCost, companyForOrder, eur, ensureState, isWonStage, isLostStage, stageProbability, round, type State } from './crm.ts';
 import { isOpenOpportunity } from './pipeline.ts';
 import { openStages } from './pipeline-stages.ts';
+import { agingBuckets, balance, isIssued, projectInvoicedRevenue } from './invoices.ts';
 
 export type ReportStuck = {
   id: string;
@@ -22,6 +23,8 @@ export type BusinessReport = {
   weightedForecast: number;
   lostReasons: { reasonId: string; name: string; count: number; amount: number }[];
   collectedThisMonth: { count: number; amount: number };
+  invoicedThisMonth: { count: number; amount: number };
+  aging: ReturnType<typeof agingBuckets>;
   margins: { projectId: string; title: string; revenue: number; cost: number; margin: number }[];
   stuck: ReportStuck[];
 };
@@ -45,6 +48,7 @@ export function businessReport(input: State, now = today()): BusinessReport {
   const wonRows = closedInPeriod('won');
   const lostRows = closedInPeriod('lost');
   const payments = s.payments.filter(p => p.date >= periodStart && p.date <= periodEnd);
+  const issued = s.invoices.filter(i => isIssued(i) && (i.kind || 'invoice') === 'invoice' && i.date >= periodStart && i.date <= periodEnd);
   const openMrr = round(open.reduce((sum, o) => sum + (o.mrr || 0), 0));
   const weightedForecast = round(open.reduce((sum, o) => sum + o.amount * stageProbability(s, o.stageId) / 100, 0));
   const lostReasons = s.lostReasons.filter(reason => !reason.archived).map(reason => {
@@ -52,11 +56,11 @@ export function businessReport(input: State, now = today()): BusinessReport {
     return { reasonId: reason.id, name: reason.name, count: rows.length, amount: rows.reduce((sum, o) => sum + o.amount, 0) };
   }).filter(row => row.count > 0);
   const margins = s.projects.map(p => {
-    const order = s.orders.find(o => o.id === p.orderId);
-    const revenue = order ? total(order.lines) : 0;
+    const revenue = projectInvoicedRevenue(s, p.orderId || '');
     const cost = projectCost(s, p.id);
     return { projectId: p.id, title: p.title, revenue, cost, margin: revenue - cost };
   }).filter(row => row.revenue > 0 || row.cost > 0).sort((a, b) => a.margin - b.margin);
+  const aging = agingBuckets(s, now);
   const stuck: ReportStuck[] = [];
   for (const o of open) {
     const level = risk(s, o, now).level;
@@ -80,12 +84,12 @@ export function businessReport(input: State, now = today()): BusinessReport {
       opportunityId: t.opportunityId,
     });
   }
-  for (const i of s.invoices.filter(inv => !inv.paid && inv.dueDate < now)) {
+  for (const i of s.invoices.filter(inv => isIssued(inv) && !inv.paid && inv.dueDate < now)) {
     stuck.push({
       id: `inv-${i.id}`,
       kind: 'invoice',
       title: i.title,
-      detail: `Cobro vencido · ${eur(i.amount)}`,
+      detail: `Cobro vencido · ${eur(balance(s, i))}`,
       companyId: companyForOrder(s, i.orderId),
       invoiceId: i.id,
     });
@@ -100,6 +104,8 @@ export function businessReport(input: State, now = today()): BusinessReport {
     weightedForecast,
     lostReasons,
     collectedThisMonth: { count: payments.length, amount: payments.reduce((a, p) => a + p.amount, 0) },
+    invoicedThisMonth: { count: issued.length, amount: issued.reduce((a, i) => a + i.amount, 0) },
+    aging,
     margins,
     stuck,
   };
@@ -115,7 +121,14 @@ export function reportCsv(s: State, now = today()) {
     ['Forecast', 'MRR abierto', '', r.openMrr, ''],
     ['Forecast', 'Importe ponderado', '', r.weightedForecast, ''],
     ...r.lostReasons.map(row => ['Motivo pérdida', row.name, row.count, row.amount, '']),
-    ['Cobros', 'Mes en curso', r.collectedThisMonth.count, r.collectedThisMonth.amount, ''],
+    ['Facturado', 'Periodo', r.invoicedThisMonth.count, r.invoicedThisMonth.amount, ''],
+    ['Cobros', 'Periodo', r.collectedThisMonth.count, r.collectedThisMonth.amount, ''],
+    ['Deuda', 'Pendiente total', '', r.aging.pending, ''],
+    ['Deuda', 'No vencido', r.aging.current.count, r.aging.current.amount, ''],
+    ['Deuda', '1-30 días', r.aging.d1_30.count, r.aging.d1_30.amount, ''],
+    ['Deuda', '31-60 días', r.aging.d31_60.count, r.aging.d31_60.amount, ''],
+    ['Deuda', '61-90 días', r.aging.d61_90.count, r.aging.d61_90.amount, ''],
+    ['Deuda', '+90 días', r.aging.d90plus.count, r.aging.d90plus.amount, ''],
     ...r.margins.map(m => ['Margen', m.title, '', m.margin, `Ingresos ${m.revenue} · Coste ${m.cost}`]),
     ...r.stuck.map(item => ['Atasco', item.title, '', '', item.detail]),
   ];

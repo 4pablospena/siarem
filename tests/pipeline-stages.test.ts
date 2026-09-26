@@ -12,7 +12,7 @@ test('ensureState migrates legacy stage names to stageId and installs default ma
       id: 'o', demo: false, companyId: 'c', title: 'Deal', amount: 100, stage: 'Propuesta',
       closeDate: today(), nextStep: '', nextDate: '', createdAt: today(),
     }],
-    companies: [{ id: 'c', demo: false, name: 'Acme', contact: '', email: '', phone: '', contactDays: 30 }],
+    companies: [{ id: 'c', demo: false, name: 'Acme', contact: '', email: '', phone: '', contactDays: 30, taxId: '', address: '', paymentDays: 30 }],
   } as never;
   const state = ensureState(raw);
   assert.equal(state.pipelineStages.length, 5);
@@ -75,7 +75,7 @@ test('lost stage requires reason; probability and weekly progress helpers', () =
 
 test('WIP block prevents entering a full column; rank swaps order', () => {
   let state = emptyState();
-  state.companies.push({ id: 'c', demo: false, name: 'Acme', contact: '', email: '', phone: '', contactDays: 30 });
+  state.companies.push({ id: 'c', demo: false, name: 'Acme', contact: '', email: '', phone: '', contactDays: 30, taxId: '', address: '', paymentDays: 30 });
   state.pipelineStages = defaultPipelineStages().map(stage => stage.id === 'stage-propuesta'
     ? { ...stage, wipLimit: 1, wipMode: 'block' as const }
     : stage);
@@ -99,7 +99,7 @@ test('WIP block prevents entering a full column; rank swaps order', () => {
 
 test('drag reorder places cards before a target and across stages; patch sets priority and owner', () => {
   let state = emptyState();
-  state.companies.push({ id: 'c', demo: false, name: 'Acme', contact: '', email: '', phone: '', contactDays: 30 });
+  state.companies.push({ id: 'c', demo: false, name: 'Acme', contact: '', email: '', phone: '', contactDays: 30, taxId: '', address: '', paymentDays: 30 });
   for (const [id, stageId] of [['a', 'stage-propuesta'], ['b', 'stage-propuesta'], ['c1', 'stage-propuesta'], ['x', 'stage-cualificacion']]) {
     state = apply(state, {
       action: 'save', kind: 'opportunities',

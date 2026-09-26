@@ -28,7 +28,7 @@ test('pipeline uses the saved next step and leaves missing dates empty', () => {
 test('follow-up draft names the same next action as the record, never the placeholder', async () => {
   const { followupDraft } = await import('../lib/pipeline.ts');
   const state = emptyState();
-  state.companies = [{ id: 'company', demo: false, name: 'Acme', contact: 'Ana', email: '', phone: '', contactDays: 30 }];
+  state.companies = [{ id: 'company', demo: false, name: 'Acme', contact: 'Ana', email: '', phone: '', contactDays: 30, taxId: '', address: '', paymentDays: 30 }];
   state.followups = [{ id: 'task', opportunityId: opportunity.id, title: 'Call buyer', dueDate: '2026-09-27', done: false, demo: false }];
   assert.match(followupDraft(state, opportunity), /^Hola, Ana:[\s\S]*Nos queda pendiente: Call buyer\./);
   const blank = followupDraft(emptyState(), { ...opportunity, nextStep: '' });
@@ -38,7 +38,7 @@ test('follow-up draft names the same next action as the record, never the placeh
 test('Siarem-bot brief lists only open work, with the shared next action', async () => {
   const { botBrief } = await import('../app/siarem-bot.tsx');
   const state = emptyState();
-  state.companies = [{ id: 'company', demo: false, name: 'Acme', contact: '', email: '', phone: '', contactDays: 30 }];
+  state.companies = [{ id: 'company', demo: false, name: 'Acme', contact: '', email: '', phone: '', contactDays: 30, taxId: '', address: '', paymentDays: 30 }];
   state.opportunities = [{ ...opportunity, nextDate: '2020-01-01' }, { ...opportunity, id: 'won', title: 'Closed deal', stageId: 'stage-ganada', nextDate: '2020-01-01' }];
   const brief = botBrief('Foco', state);
   assert.match(brief, /Proposal id=opportunity en Propuesta stageId=stage-propuesta, .*siguiente acción Review proposal \(2020-01-01\)/);

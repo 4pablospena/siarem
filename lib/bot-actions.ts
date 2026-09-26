@@ -1,4 +1,5 @@
 import { apply, ensureState, today, type Command, type State, type BotActionRecord as CrmBotAction } from './crm.ts';
+import { balance } from './invoices.ts';
 import { activeStages, resolveLegacyStageId, stageName } from './pipeline-stages.ts';
 
 export type TeamRole = 'owner' | 'member';
@@ -118,9 +119,13 @@ export function runBotAction(
 
   if (body.kind === 'pay') {
     if (!body.invoiceId || !body.date) throw new Error('Indica la factura y la fecha de cobro');
-    command = { action: 'pay', id: body.invoiceId, date: body.date };
+    const invoice = state.invoices.find(item => item.id === body.invoiceId);
+    if (!invoice) throw new Error('La factura no existe');
+    const due = balance(state, invoice);
+    if (due <= 0) throw new Error('La factura ya está cobrada');
+    command = { action: 'pay', id: body.invoiceId, date: body.date, amount: due };
     const next = apply(state, command) as StateWithAudit;
-    const payment = next.payments.find(p => p.invoiceId === body.invoiceId);
+    const payment = [...next.payments].reverse().find(p => p.invoiceId === body.invoiceId);
     result = { kind: 'pay', invoiceId: body.invoiceId, paymentId: payment?.id };
     next.botActions = [...actions, {
       id: crypto.randomUUID(),
