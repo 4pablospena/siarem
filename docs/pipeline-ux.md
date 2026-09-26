@@ -41,3 +41,6 @@ Catálogo `opportunityTags`, chips en card (máx. 3 +N) y filtro/búsqueda por e
 
 ## Fase 3 — MRR
 Campo opcional `mrr`, total por columna, CSV e Informes (MRR abierto).
+
+## Fase 4 — Historial
+`stageHistory` inmutable al cambiar etapa; `daysInStage` desde la última transición.
