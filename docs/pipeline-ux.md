@@ -16,7 +16,7 @@ Actualizado el 26 de septiembre de 2026.
 ## Validación
 
 - TypeScript sin errores; build de producción correcto; ESLint de los archivos nuevos correcto.
-- 23 pruebas de dominio, exportación, proyectos, siguiente acción, borrador de seguimiento y resumen de Hermes.
+- 25 pruebas de dominio, exportación, proyectos, siguiente acción, borrador de seguimiento, áreas y resumen de Siarem-bot.
 - Comprobado en navegador: ratón entre etapas, teclado, cancelación con Escape, soltar fuera, soltar en la misma etapa, menú Mover, foco tras guardar, creación con etapa, búsqueda sin resultados y borrado de filtro.
 - Conflicto de revisión observado durante la prueba: se rechazó el cambio y se recuperó la etapa del servidor.
 - Revisión visual a 1440, 768 y 390 px; en móvil la página mantiene su ancho y solo el tablero desplaza horizontalmente.
@@ -28,12 +28,18 @@ El arrastre cambia de etapa; no reordena posiciones dentro de una etapa. No se a
 
 ## Módulo 1 · Ficha de oportunidad y Foco (hecho)
 
-- Una sola fuente para la siguiente acción (`pipelineNextAction`): tarjeta, Foco, CSV, ficha, borrador de seguimiento (`followupDraft`) y el resumen que recibe Hermes. «Marcar hecha» completa exactamente la tarea que se muestra.
+- Una sola fuente para la siguiente acción (`pipelineNextAction`): tarjeta, Foco/Hoy, CSV, ficha, borrador de seguimiento (`followupDraft`) y el resumen que recibe Siarem-bot. «Marcar hecha» completa exactamente la tarea que se muestra.
 - La ficha se ordena en tres bloques: **Seguimiento** (solo abiertas: motivo de riesgo, siguiente acción, «Después»), **Cierre** (etapa, cierre previsto con aviso si venció, presupuesto, marcar ganada/perdida) y **Actividad** (contactos y seguimientos completados). Estado e importe van una sola vez, en la cabecera.
 - Cerrar desde la ficha usa el mismo cambio de etapa del tablero, con deshacer, y lleva el foco al bloque Cierre. Una oportunidad cerrada no ofrece seguimientos ni presupuesto; conserva sus tareas en Actividad y enlaza a su proyecto si existe.
 - Sin oportunidad seleccionada, la ficha de empresa lista sus oportunidades para abrirlas.
-- Hermes recibe «Piden atención» con la misma lista y orden que Foco, sin oportunidades cerradas.
+- Siarem-bot recibe «Piden atención» con la misma lista y orden que Hoy, sin oportunidades cerradas.
 - Validado: 23 pruebas; navegador a 1440 px con orden de tabulación seguimiento → cierre → actividad, cierre como ganada y deshacer (la oportunidad volvió a Negociación).
+
+## Shell compacto y Siarem-bot (hecho)
+
+- Inicio agrupa el trabajo en **Hoy**, **Pipeline**, **Proyectos**, **Leads**, **Clientes** y **Facturación**. Pipeline y Proyectos son módulos de primer nivel. Facturación usa pestañas; las vistas internas (`Foco`, `Leads`, `Pipeline`…) se conservan para CSV y filtros.
+- Hoy reúne oportunidades en riesgo, leads vencidos y cobros vencidos. Las métricas de módulo pasan a chips. Cabeceras en una sola fila.
+- Hermes se renombra a **Siarem-bot**: panel con burbujas, escritura, copiar, detener, textarea y sugerencias por área. Endpoint `/api/bot`. Las claves no se muestran nunca.
 
 ## Módulo 2 · Leads y Empresas (hecho)
 
@@ -49,6 +55,6 @@ El arrastre cambia de etapa; no reordena posiciones dentro de una etapa. No se a
 2. ~~**Leads y Empresas.**~~ Hecho; ver arriba. Mejorar cualificación y conversión, datos de contacto incompletos y navegación al historial. Mantener la trazabilidad y evitar duplicados.
 3. **Proyectos.** Pulir ficha de tarea, responsables, fechas y cambio entre tablero y roadmap. Probar proyectos con muchas tareas y sin fechas antes de ampliar funcionalidades.
 4. **Ventas y Facturas.** Revisar jerarquía de tablas y formularios, validaciones y estados de confirmación/cobro. Conservar los controles de facturación ya probados.
-5. **Hermes.** Concretar el endpoint y contrato de la instalación desplegada. Definir las acciones automáticas autorizadas, permisos, idempotencia y trazabilidad sobre los comandos existentes. No dar por conectada la instalación remota hasta validar una llamada real. Las claves no se muestran nunca: ni en el chat, ni en errores, ni en la interfaz. El campo es una contraseña, sin botón para revelarla.
+5. **Siarem-bot.** Concretar el endpoint y contrato de la instalación desplegada. Definir las acciones automáticas autorizadas, permisos, idempotencia y trazabilidad sobre los comandos existentes. No dar por conectada la instalación remota hasta validar una llamada real. Las claves no se muestran nunca: ni en el chat, ni en errores, ni en la interfaz. El campo es una contraseña, sin botón para revelarla.
 
 Antes de iniciar otro módulo: revisar cambios locales del usuario, preservar datos y comprobar el recorrido completo del módulo anterior. No hacer una sustitución global de estilos ni añadir indicadores sin una decisión concreta que soporten.

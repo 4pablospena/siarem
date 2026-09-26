@@ -13,7 +13,7 @@ Desde **Inicio** se entra a cada módulo:
 - **Proyectos.** Tablero (Por hacer, En curso, Hecho), asignación y roadmap por fechas. Confirmar un pedido crea el proyecto y pasa la oportunidad a Ganada.
 - **Facturas.** Emisión y cobro. Los importes son la base del servicio, sin impuestos.
 
-**Hermes** es un panel de ayuda. No modifica los registros por su cuenta. Cada vista se puede exportar a CSV.
+**Siarem-bot** es un panel de ayuda. No modifica los registros por su cuenta. Cada vista se puede exportar a CSV.
 
 ## Arranque
 

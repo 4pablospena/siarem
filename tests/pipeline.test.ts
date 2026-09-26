@@ -34,14 +34,29 @@ test('follow-up draft names the same next action as the record, never the placeh
   assert.match(blank, /^Hola:/);
   assert.doesNotMatch(blank, /Definir siguiente paso/);
 });
-test('Hermes brief lists only open work, with the shared next action', async () => {
-  const { hermesBrief } = await import('../app/hermes-panel.tsx');
+test('Siarem-bot brief lists only open work, with the shared next action', async () => {
+  const { botBrief } = await import('../app/siarem-bot.tsx');
   const state = emptyState();
   state.companies = [{ id: 'company', demo: false, name: 'Acme', contact: '', email: '', phone: '', contactDays: 30 }];
   state.opportunities = [{ ...opportunity, nextDate: '2020-01-01' }, { ...opportunity, id: 'won', title: 'Closed deal', stage: 'Ganada', nextDate: '2020-01-01' }];
-  const brief = hermesBrief('Foco', state);
-  assert.match(brief, /Proposal en Propuesta, .*siguiente acción Review proposal \(2020-01-01\)/);
+  const brief = botBrief('Foco', state);
+  assert.match(brief, /Proposal id=opportunity en Propuesta, .*siguiente acción Review proposal \(2020-01-01\)/);
   assert.doesNotMatch(brief, /Closed deal/);
+});
+test('areas map each commercial view and open on their first tab', async () => {
+  const { areas, areaOf, navigateTargets } = await import('../lib/areas.ts');
+  assert.equal(areaOf('Leads')?.name, 'Leads');
+  assert.equal(areaOf('Pipeline')?.name, 'Pipeline');
+  assert.equal(areaOf('Proyectos')?.name, 'Proyectos');
+  assert.equal(areaOf('Foco')?.name, 'Hoy');
+  assert.equal(areaOf('Ventas')?.name, 'Facturación');
+  assert.deepEqual(areas.find(area => area.name === 'Pipeline')?.views, ['Pipeline']);
+  assert.deepEqual(areas.find(area => area.name === 'Proyectos')?.views, ['Proyectos']);
+  assert.ok(navigateTargets().includes('Pipeline'));
+  assert.ok(navigateTargets().includes('Proyectos'));
+  assert.ok(navigateTargets().includes('Informes'));
+  assert.ok(navigateTargets().includes('Agenda'));
+  assert.ok(navigateTargets().includes('Catálogo'));
 });
 test('closed opportunities do not present stale follow-up instructions', () => {
   for (const stage of ['Ganada', 'Perdida'] as const) assert.equal(pipelineNextAction(emptyState(), { ...opportunity, stage }), null);

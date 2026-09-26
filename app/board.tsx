@@ -16,6 +16,7 @@ type BoardProps<T extends Item> = {
   label: string; columns: BoardColumn[]; items: T[]; columnOf: (item: T) => string;
   busy: boolean; onOpen: (item: T) => void; onMove: (item: T, to: string) => void;
   card: (item: T) => BoardCard; onCreate?: (column: string) => void; filtered?: boolean;
+  moveLabel?: string;
 };
 
 // Pointer drops must be inside a column: dropping outside cancels the move.
@@ -47,22 +48,24 @@ function CardContent({ content, handle, onOpen, children }: { content: BoardCard
   </>;
 }
 
-function BoardRecord({ id, column, content, columns, busy, onOpen, onMove }: {
+function BoardRecord({ id, column, content, columns, busy, onOpen, onMove, moveLabel }: {
   id: string; column: string; content: BoardCard; columns: BoardColumn[]; busy: boolean;
-  onOpen: () => void; onMove: (to: string) => void;
+  onOpen: () => void; onMove: (to: string) => void; moveLabel: string;
 }) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, isDragging } = useDraggable({ id, disabled: busy, data: { column, title: content.title } });
-  return <article ref={setNodeRef} className={'board-card' + (isDragging ? ' dragging' : '')} data-record-id={id} onClick={event => { if (event.currentTarget.contains(event.target as Node) && !(event.target as HTMLElement).closest('button,[role="menuitem"]')) onOpen(); }}>
+  return <article ref={setNodeRef} className={'board-card' + (isDragging ? ' dragging' : '')} data-record-id={id}>
     <CardContent content={content} onOpen={onOpen} handle={
       <button type="button" ref={setActivatorNodeRef} {...attributes} {...listeners} disabled={busy}
         className="drag-handle" aria-label={'Arrastrar ' + content.title} title="Arrastrar · Espacio y flechas para mover">
         <GripVertical size={17}/>
       </button>
     }>
-      <span className="row-actions">{content.tools}<DropdownMenu>
+      <span className="row-actions">{content.tools}
+        <button type="button" className="compact-action" onClick={onOpen} aria-label={'Abrir ' + content.title}>Abrir</button>
+        <DropdownMenu>
         <DropdownMenuTrigger asChild><button type="button" className="compact-action board-move" disabled={busy} aria-label={'Mover ' + content.title}>Mover <ArrowRight size={13}/></button></DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="board-move-menu">
-          <DropdownMenuLabel>Mover a otra etapa</DropdownMenuLabel>
+          <DropdownMenuLabel>{moveLabel}</DropdownMenuLabel>
           {columns.filter(option => option.key !== column).map(option => <DropdownMenuItem key={option.key} disabled={busy} onSelect={() => onMove(option.key)}>{option.label}</DropdownMenuItem>)}
         </DropdownMenuContent>
       </DropdownMenu></span>
@@ -86,7 +89,7 @@ function Column({ column, count, children, dragging, onCreate, filtered, busy }:
   </section>;
 }
 
-export function Board<T extends Item>({ label, columns, items, columnOf, busy, onOpen, onMove, card, onCreate, filtered }: BoardProps<T>) {
+export function Board<T extends Item>({ label, columns, items, columnOf, busy, onOpen, onMove, card, onCreate, filtered, moveLabel = 'Mover a otra etapa' }: BoardProps<T>) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const boardRef = useRef<HTMLDivElement>(null);
   const pendingFocus = useRef<{ id: string; handle: boolean } | null>(null);
@@ -134,7 +137,7 @@ export function Board<T extends Item>({ label, columns, items, columnOf, busy, o
       {columns.map(column => {
         const list = items.filter(item => columnOf(item) === column.key);
         return <Column key={column.key} column={column} count={list.length} dragging={!!activeId} busy={busy} filtered={filtered} onCreate={onCreate ? () => onCreate(column.key) : undefined}>
-          {list.map(item => <BoardRecord key={item.id} id={item.id} column={column.key} content={card(item)} columns={columns} busy={busy} onOpen={() => onOpen(item)} onMove={to => move(item, to)}/>)}
+          {list.map(item => <BoardRecord key={item.id} id={item.id} column={column.key} content={card(item)} columns={columns} busy={busy} moveLabel={moveLabel} onOpen={() => onOpen(item)} onMove={to => move(item, to)}/>)}
         </Column>;
       })}
     </div>
