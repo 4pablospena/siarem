@@ -35,3 +35,6 @@ La exportación CSV del Pipeline aplica los mismos filtros avanzados que el tabl
 ## Densidad compacta
 
 En modo compacto la card muestra título, importe/MRR, chips de etiqueta y estado; el detalle del siguiente paso queda para la ficha.
+
+## Fase 2 — Etiquetas
+Catálogo `opportunityTags`, chips en card (máx. 3 +N) y filtro/búsqueda por etiqueta.
