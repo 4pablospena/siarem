@@ -46,6 +46,7 @@ export const schemas={
   ownerUserId:z.string().max(120).default(''),
   lostReasonId:z.string().max(80).default(''),
   rank:z.number().finite().default(0),
+  priority:z.number().int().min(0).max(3).default(0),
   stageHistory:z.array(stageHistoryEntry).default([]),
  }),
  interactions:z.object({...base,companyId:name,opportunityId:z.string(),kind:z.enum(['Llamada','Email','Reunión','Nota']),date,notes:name}),
@@ -89,7 +90,7 @@ export const emptyState=():State=>({
   botActions: [],
 });
 
-function migrateOpportunity(row: Entity['opportunities'] & {stage?: string; stageId?: string; tagIds?: string[]; mrr?: number | null; ownerUserId?: string; lostReasonId?: string; rank?: number; stageHistory?: StageHistoryEntry[]}, stagesMap: PipelineStage[]) {
+function migrateOpportunity(row: Entity['opportunities'] & {stage?: string; stageId?: string; tagIds?: string[]; mrr?: number | null; ownerUserId?: string; lostReasonId?: string; rank?: number; priority?: number; stageHistory?: StageHistoryEntry[]}, stagesMap: PipelineStage[]) {
   const raw = row as {stage?: string; stageId?: string};
   let stageId = '';
   if (raw.stage) {
@@ -110,6 +111,7 @@ function migrateOpportunity(row: Entity['opportunities'] & {stage?: string; stag
   row.lostReasonId = row.lostReasonId || '';
   row.rank = Number.isFinite(row.rank) ? Number(row.rank) : 0;
   row.stageHistory = Array.isArray(row.stageHistory) ? row.stageHistory : [];
+  row.priority = Number.isInteger(row.priority) ? Math.min(3, Math.max(0, Number(row.priority))) : 0;
   return row;
 }
 
@@ -248,6 +250,12 @@ function maxRankInStage(s:State, stageId:string){
   const ranks=s.opportunities.filter(o=>o.stageId===stageId).map(o=>o.rank||0);
   return ranks.length?Math.max(...ranks):0;
 }
+function placeInStage(s:State,o:Entity['opportunities'],beforeId:string|null){
+  const column=s.opportunities.filter(item=>item.stageId===o.stageId&&item.id!==o.id).sort((a,b)=>(a.rank||0)-(b.rank||0)||a.id.localeCompare(b.id));
+  const index=beforeId?column.findIndex(item=>item.id===beforeId):-1;
+  column.splice(index<0?column.length:index,0,o);
+  column.forEach((item,position)=>{item.rank=position+1});
+}
 
 function appendStageHistory(o:Entity['opportunities'], fromStageId:string, toStageId:string, user=''){
   o.stageHistory=[...(o.stageHistory||[]),{id:crypto.randomUUID(),at:new Date().toISOString(),fromStageId,toStageId,user}];
@@ -256,7 +264,7 @@ function appendStageHistory(o:Entity['opportunities'], fromStageId:string, toSta
 export type Command={
   action:string;kind?:Kind;record?:unknown;id?:string;stage?:string;stageId?:string;expectedStage?:string;expectedStageId?:string;
   policy?:string;amount?:number;title?:string;date?:string;dueDate?:string;hourIds?:string[];
-  stages?:PipelineStage[];tags?:OpportunityTag[];reasons?:LostReason[];lostReasonId?:string;user?:string;rank?:number;direction?:'up'|'down';
+  stages?:PipelineStage[];tags?:OpportunityTag[];reasons?:LostReason[];lostReasonId?:string;user?:string;rank?:number;direction?:'up'|'down';beforeId?:string|null;priority?:number;ownerUserId?:string;
 };
 
 export function apply(s0:State,cmd:Command):State{
@@ -314,7 +322,7 @@ export function apply(s0:State,cmd:Command):State{
   else s.companies.push({id:companyId,demo:lead.demo,name:lead.name,email:lead.email,contact:lead.contact,phone:lead.phone,contactDays:30});
   const opportunityId=id();
   const openId=firstOpenStageId(s);
-  s.opportunities.push({id:opportunityId,demo:lead.demo,companyId,title:cmd.title||`Oportunidad · ${lead.name}`,amount:0,stageId:openId,closeDate:dateOffset(30),nextStep:lead.nextDate?'Contactar en la fecha prevista':'Preparar la primera reunión',nextDate:lead.nextDate||today(),createdAt:today(),tagIds:[],mrr:null,ownerUserId:'',lostReasonId:'',rank:maxRankInStage(s,openId)+1,stageHistory:[]});
+  s.opportunities.push({id:opportunityId,demo:lead.demo,companyId,title:cmd.title||`Oportunidad · ${lead.name}`,amount:0,stageId:openId,closeDate:dateOffset(30),nextStep:lead.nextDate?'Contactar en la fecha prevista':'Preparar la primera reunión',nextDate:lead.nextDate||today(),createdAt:today(),tagIds:[],mrr:null,ownerUserId:'',lostReasonId:'',rank:maxRankInStage(s,openId)+1,priority:0,stageHistory:[]});
   if(lead.contact.trim()||lead.email.trim()||lead.phone.trim()){
    const existing=s.people.find(p=>p.companyId===companyId&&(sameText(p.name,lead.contact)||sameText(p.email,lead.email)));
    if(existing){if(!existing.opportunityId)existing.opportunityId=opportunityId;for(const field of ['email','phone'] as const)if(!existing[field]&&lead[field])existing[field]=lead[field]}
@@ -328,7 +336,7 @@ export function apply(s0:State,cmd:Command):State{
   if(fromExpected&&o.stageId!==fromExpected)fail('La etapa ha cambiado. Recarga antes de deshacer');
   const toId=cmd.stageId||(cmd.stage?resolveLegacyStageId(cmd.stage):'');
   const stage=assertActiveStage(s,toId);
-  if(o.stageId===toId)return s;
+  if(o.stageId===toId){if(cmd.beforeId!==undefined)placeInStage(s,o,cmd.beforeId);return s}
   if(stage.kind==='lost'){
     const reasonId=cmd.lostReasonId||o.lostReasonId||'';
     if(!reasonId||!s.lostReasons.some(r=>r.id===reasonId&&!r.archived))fail('Indica el motivo de pérdida');
@@ -340,9 +348,11 @@ export function apply(s0:State,cmd:Command):State{
   }
   appendStageHistory(o,o.stageId,toId,cmd.user||'');
   o.stageId=toId;
-  o.rank=maxRankInStage(s,toId)+1;
+  if(cmd.beforeId!==undefined)placeInStage(s,o,cmd.beforeId);
+  else o.rank=maxRankInStage(s,toId)+1;
  }else if(cmd.action==='rankOpportunity'){
   const o=get(s,'opportunities',cmd.id!);
+  if(cmd.beforeId!==undefined){placeInStage(s,o,cmd.beforeId);return s}
   const column=s.opportunities.filter(item=>item.stageId===o.stageId).sort((a,b)=>(a.rank||0)-(b.rank||0)||a.id.localeCompare(b.id));
   const index=column.findIndex(item=>item.id===o.id);
   if(index<0)return s;
@@ -350,6 +360,17 @@ export function apply(s0:State,cmd:Command):State{
   if(swapWith<0||swapWith>=column.length)return s;
   const other=column[swapWith];
   const currentRank=o.rank||0;o.rank=other.rank||0;other.rank=currentRank;
+ }else if(cmd.action==='patchOpportunity'){
+  const o=get(s,'opportunities',cmd.id!);
+  if(cmd.priority!==undefined){
+    const priority=Number(cmd.priority);
+    if(!Number.isInteger(priority)||priority<0||priority>3)fail('La prioridad va de 0 a 3');
+    o.priority=priority;
+  }
+  if(cmd.ownerUserId!==undefined){
+    if(typeof cmd.ownerUserId!=='string'||cmd.ownerUserId.length>120)fail('Responsable no válido');
+    o.ownerUserId=cmd.ownerUserId;
+  }
  }else if(cmd.action==='savePipelineStages'){
   const next=(cmd.stages||[]).map((stage,index)=>normalizePipelineStage({...stage,order:index,tone:index}));
   if(!next.some(stage=>!stage.archived&&stage.kind==='open'))fail('Necesitas al menos una etapa abierta');
@@ -446,8 +467,8 @@ export function seed():State{
  s.services.push({id:'demo-service',demo,name:'Servicio a medida',price:2400,policy:'fixed',tasks:'Preparación\nEjecución\nEntrega y revisión'});
  s.opportunityTags.push({id:'demo-tag-prioridad',name:'Prioridad',color:'amber',archived:false},{id:'demo-tag-saas',name:'SaaS',color:'blue',archived:false});
  s.opportunities.push(
-  {id:'demo-opportunity',demo,companyId:'demo-company',title:'Servicio a medida · segunda fase',amount:4800,stageId:'stage-propuesta',closeDate:dateOffset(5),nextStep:'Revisar la propuesta con el responsable',nextDate:dateOffset(-2),createdAt:dateOffset(-40),tagIds:['demo-tag-prioridad'],mrr:320,ownerUserId:'',lostReasonId:'',rank:1,stageHistory:[]},
-  {id:'demo-won',demo,companyId:'demo-company',title:'Servicio a medida · primera fase',amount:2400,stageId:'stage-ganada',closeDate:dateOffset(-12),nextStep:'Revisar la entrega inicial',nextDate:dateOffset(4),createdAt:dateOffset(-50),tagIds:[],mrr:null,ownerUserId:'',lostReasonId:'',rank:1,stageHistory:[]}
+  {id:'demo-opportunity',demo,companyId:'demo-company',title:'Servicio a medida · segunda fase',amount:4800,stageId:'stage-propuesta',closeDate:dateOffset(5),nextStep:'Revisar la propuesta con el responsable',nextDate:dateOffset(-2),createdAt:dateOffset(-40),tagIds:['demo-tag-prioridad'],mrr:320,ownerUserId:'',lostReasonId:'',rank:1,priority:0,stageHistory:[]},
+  {id:'demo-won',demo,companyId:'demo-company',title:'Servicio a medida · primera fase',amount:2400,stageId:'stage-ganada',closeDate:dateOffset(-12),nextStep:'Revisar la entrega inicial',nextDate:dateOffset(4),createdAt:dateOffset(-50),tagIds:[],mrr:null,ownerUserId:'',lostReasonId:'',rank:1,priority:0,stageHistory:[]}
  );
  s.people.push({id:'demo-person',demo,companyId:'demo-company',name:'Responsable de operaciones',email:'',phone:'',role:'Decisor',opportunityId:'demo-opportunity'});
  s.interactions.push(...[-18,-10,-4].map((n,i)=>({id:'demo-contact-'+i,demo,companyId:'demo-company',opportunityId:'demo-opportunity',kind:['Llamada','Reunión','Email'][i] as Entity['interactions']['kind'],date:dateOffset(n),notes:['Primera conversación sobre las necesidades de la empresa.','Revisamos el alcance de la segunda fase y las fechas.','Propuesta enviada. Pendiente de revisar condiciones.'][i]})));

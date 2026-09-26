@@ -7,7 +7,7 @@ const opportunity: State['opportunities'][number] = {
   id: 'opportunity', demo: false, companyId: 'company', title: 'Proposal', stageId: 'stage-propuesta',
   amount: 1000, closeDate: '2026-10-01', createdAt: '2026-09-01',
   nextStep: 'Review proposal', nextDate: '2026-09-29',
-  tagIds: [], mrr: null, ownerUserId: '', lostReasonId: '', rank: 0, stageHistory: [],
+  tagIds: [], mrr: null, ownerUserId: '', lostReasonId: '', rank: 0, priority: 0, stageHistory: [],
 };
 test('pipeline shows the earliest pending follow-up, excluding completed and unrelated tasks', () => {
   const state = emptyState();

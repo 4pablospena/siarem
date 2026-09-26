@@ -96,3 +96,26 @@ test('WIP block prevents entering a full column; rank swaps order', () => {
   state = apply(state, { action: 'rankOpportunity', id: 'b', direction: 'down' });
   assert.notEqual(state.opportunities.find(o => o.id === 'b')!.rank, before);
 });
+
+test('drag reorder places cards before a target and across stages; patch sets priority and owner', () => {
+  let state = emptyState();
+  state.companies.push({ id: 'c', demo: false, name: 'Acme', contact: '', email: '', phone: '', contactDays: 30 });
+  for (const [id, stageId] of [['a', 'stage-propuesta'], ['b', 'stage-propuesta'], ['c1', 'stage-propuesta'], ['x', 'stage-cualificacion']]) {
+    state = apply(state, {
+      action: 'save', kind: 'opportunities',
+      record: { id, demo: false, companyId: 'c', title: id, amount: 10, stageId, closeDate: dateOffset(5), nextStep: '', nextDate: '', createdAt: today(), tagIds: [], mrr: null, ownerUserId: '', lostReasonId: '', rank: 0, stageHistory: [] },
+    });
+  }
+  const order = (stageId: string) => state.opportunities.filter(o => o.stageId === stageId).sort((p, q) => p.rank - q.rank).map(o => o.id);
+  state = apply(state, { action: 'rankOpportunity', id: 'c1', beforeId: 'a' });
+  assert.deepEqual(order('stage-propuesta'), ['c1', 'a', 'b']);
+  state = apply(state, { action: 'rankOpportunity', id: 'c1', beforeId: null });
+  assert.deepEqual(order('stage-propuesta'), ['a', 'b', 'c1']);
+  state = apply(state, { action: 'stage', id: 'x', stageId: 'stage-propuesta', beforeId: 'b' });
+  assert.deepEqual(order('stage-propuesta'), ['a', 'x', 'b', 'c1']);
+  state = apply(state, { action: 'patchOpportunity', id: 'a', priority: 3, ownerUserId: 'user-1' });
+  const a = state.opportunities.find(o => o.id === 'a')!;
+  assert.equal(a.priority, 3);
+  assert.equal(a.ownerUserId, 'user-1');
+  assert.throws(() => apply(state, { action: 'patchOpportunity', id: 'a', priority: 5 }), /prioridad/);
+});

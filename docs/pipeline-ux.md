@@ -10,25 +10,33 @@ Cada espacio tiene su mapa `pipelineStages` con ids estables. Las oportunidades 
 
 - Cada oportunidad tiene un `rank` numérico por espacio (único orden compartido del board).
 - Dentro de una columna, las cards se ordenan por `rank` ascendente y, a igualdad, por `id`.
-- Al crear una oportunidad o al cambiarla de etapa, entra al **final** de la columna destino (`rank = max + 1`).
-- En la card puedes **Subir** / **Bajar** (acción `rankOpportunity`) para intercambiar posición con la vecina.
-- Arrastrar entre columnas cambia la etapa; no reordena dentro de la misma columna (usa Subir/Bajar).
+- Al crear una oportunidad entra al **final** de su columna (`rank = max + 1`).
+- Todo se mueve arrastrando la card entera: soltarla sobre otra card la coloca delante o detrás (según la mitad donde caiga, con una línea guía); soltarla en el hueco de la columna la deja al final. Cambiar de etapa y reordenar es un solo gesto (`stage` o `rankOpportunity` con `beforeId`).
+- Con teclado: foco en el asa, Espacio para recoger, flechas izquierda/derecha para cambiar de etapa, Espacio para soltar.
+
+## Card
+
+- Cabecera: empresa y prioridad de 0 a 3 estrellas (`priority`); clic en una estrella la fija y clic en la misma la quita.
+- Importe y MRR, etiquetas y siguiente paso (en rojo si está vencido).
+- Pie: avatar del responsable (clic para reasignar o dejar sin asignar) y estado. Si la oportunidad supera el SLA de su etapa aparece un aviso «N d».
+- Prioridad y responsable se guardan con `patchOpportunity`, sin reenviar la ficha completa.
 
 ## Filtros del Pipeline
 
-Disponibles en la barra del tablero:
+La barra muestra solo los accesos frecuentes; el resto vive en el desplegable **Filtros**:
 
-| Filtro | Efecto |
-|--------|--------|
-| Búsqueda | Título, empresa, etapa, siguiente paso y nombres de etiquetas |
-| Empresa | Limita a una empresa |
-| Etiqueta | Solo oportunidades con esa etiqueta |
-| Responsable | Miembro, «Sin asignar» o «Mis oportunidades» |
-| MRR mínimo | Oportunidades con MRR ≥ valor |
-| Seguimiento vencido | Solo con siguiente paso o tarea vencida |
-| Compacta | Oculta el bloque de siguiente paso en la card |
+| Filtro | Dónde | Efecto |
+|--------|-------|--------|
+| Búsqueda | Barra | Título, empresa, etapa, siguiente paso y nombres de etiquetas |
+| Empresa | Barra | Limita a una empresa |
+| Mías | Barra | Atajo de Responsable = yo |
+| Vencidas | Barra | Solo con siguiente paso o tarea vencida |
+| Etiqueta | Filtros | Solo oportunidades con esa etiqueta |
+| Responsable | Filtros | Miembro o «Sin asignar» |
+| MRR mínimo | Filtros | Oportunidades con MRR ≥ valor |
+| Densidad | Barra (iconos) | Normal o compacta |
 
-**Limpiar filtros** restablece búsqueda, empresa y filtros avanzados (no la densidad compacta).
+Cada filtro activo aparece como chip bajo la barra; la X del chip lo quita y **Limpiar todo** restablece búsqueda, empresa y filtros (no la densidad). El botón Filtros muestra cuántos filtros secundarios hay activos. Las etapas se configuran desde **Configurar** en la cabecera (solo owner).
 
 La exportación CSV del Pipeline aplica los mismos filtros avanzados que el tablero.
 
