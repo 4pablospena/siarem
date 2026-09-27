@@ -1,11 +1,15 @@
 import { getChatGPTUser } from '../../chatgpt-auth';
 import { getMembership as membership } from '@/db/store';
 import { ensureState } from '@/lib/crm';
-import { getBlob, parseInvoiceText } from '@/lib/blob-store';
+import { getBlob } from '@/lib/blob-store';
+import { offlineExtract } from '@/lib/documents/run-extract';
+import { extractWithModel, hasExtractModel } from '@/lib/documents/extract-model';
+import { normalizeExtraction } from '@/lib/documents/normalize';
 import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
 
+/** Compat: sync OCR for callers that still POST { key }. Prefer /api/documents/*. */
 export async function POST(request: Request) {
   try {
     const user = await getChatGPTUser();
@@ -19,31 +23,21 @@ export async function POST(request: Request) {
     if (!raw) {
       const blob = await getBlob(body.key);
       if (!blob) return Response.json({ error: 'No encuentro el archivo' }, { status: 404 });
-      const endpoint = process.env.OCR_ENDPOINT;
-      const apiKey = process.env.OCR_API_KEY;
-      if (endpoint && apiKey) {
-        const res = await fetch(endpoint, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ key: body.key }),
-        });
-        if (!res.ok) return Response.json({ error: 'El OCR no respondió' }, { status: 502 });
-        const data = await res.json() as { text?: string };
-        raw = data.text || '';
-      } else {
-        raw = new TextDecoder().decode(blob.bytes);
-      }
+      raw = new TextDecoder().decode(blob.bytes);
     }
-    const draft = parseInvoiceText(raw);
+    const payload = { mode: 'text' as const, extractedText: raw };
+    const normalized = hasExtractModel()
+      ? normalizeExtraction(await extractWithModel('invoice', payload))
+      : offlineExtract(payload);
     const state = ensureState(JSON.parse(member.data));
-    const supplier = draft.taxId
-      ? state.companies.find(c => (c.taxId || '').toUpperCase() === draft.taxId.toUpperCase())
+    const supplier = normalized.taxId
+      ? state.companies.find(c => (c.taxId || '').toUpperCase() === normalized.taxId.toUpperCase())
       : undefined;
     return Response.json({
       draft: {
-        ...draft,
+        ...normalized,
         supplierCompanyId: supplier?.id || '',
-        supplierName: supplier?.name || '',
+        supplierName: supplier?.name || normalized.supplierName || '',
         attachmentKey: body.key,
         status: 'draft',
       },

@@ -15,7 +15,7 @@ export async function POST(request: Request) {
     const form = await request.formData();
     const file = form.get('file');
     if (!(file instanceof File)) return Response.json({ error: 'Adjunta un archivo' }, { status: 400 });
-    if (file.size > 8_000_000) return Response.json({ error: 'El archivo supera 8 MB' }, { status: 400 });
+    if (file.size > 10_000_000) return Response.json({ error: 'El archivo supera 10 MB' }, { status: 400 });
     const bytes = new Uint8Array(await file.arrayBuffer());
     const key = `tenants/${member.tenant_id}/purchases/${crypto.randomUUID()}-${file.name.replace(/[^\w.-]+/g, '_')}`;
     await putBlob(key, bytes, file.type || 'application/octet-stream');
