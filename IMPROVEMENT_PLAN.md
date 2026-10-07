@@ -1,6 +1,8 @@
 # Siarem: calidad de producto y conexión con agentes
 
-Fecha: 25 de septiembre de 2026. Estado: propuesta inicial con usuarios, datos y autonomía confirmados; plan autorizado; fase 1 implementada, pendiente de continuar con fase 2 y concretar la conexión con Hermes. No constituye una lista de funciones ya implementadas.
+Actualizado el 7 de octubre de 2026. Se han completado la actualización visual, la navegación recuperable y la carga por módulos. Estado actual y evidencias: [Actualización de octubre](docs/upgrade-2026-10-07.md).
+
+El contenido siguiente conserva el diagnóstico y el plan histórico del 25 de septiembre. Sus menciones a funciones pendientes no reflejan necesariamente el código actual; utiliza el documento de octubre para priorizar el siguiente trabajo.
 
 ## Objetivo
 

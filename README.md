@@ -40,3 +40,25 @@ node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1
 npx tsc --noEmit
 node --experimental-strip-types --test tests/domain.test.ts tests/export.test.ts
 ```
+
+## Navegación y diseño
+
+Inicio reúne prioridades y próximos eventos de la semana. La barra de módulos permite cambiar de área sin pasar por Inicio. El tema oscuro comparte colores, superficies y controles; la navegación se desplaza horizontalmente en pantallas pequeñas.
+
+La URL conserva módulo, búsqueda, filtros, proyecto, vista del proyecto y orden de facturas. Puedes copiarla para volver al mismo contexto. Atrás/Adelante recupera destinos anteriores; escribir una búsqueda no crea una entrada por letra. Los filtros de otras vistas se recuerdan en el historial de esa pestaña, incluso tras recargar. No se comparten con otros usuarios ni sustituyen los permisos del equipo.
+
+Ejemplos:
+
+- `/?view=Pipeline&q=Acme&overdue=1`
+- `/?view=Facturas&filter=overdue&sort=amount`
+- `/?view=Proyectos&project=ID&tab=list`
+
+Hoy, Agenda, Informes, OCR, el detalle de proyecto, la configuración del pipeline, el panel de factura y el bot se cargan al utilizarlos. El bot conserva su conversación al cerrar el panel durante la sesión.
+
+Para ejecutar la suite completa de dominio y navegación con el cargador TypeScript disponible:
+
+```sh
+node --import tsx --test tests/*.test.ts
+```
+
+La prueba `tests/server.test.mjs` requiere el servidor de producción local de Wrangler en el puerto 5174, con una base temporal inicializada mediante la migración. El servidor de desarrollo elimina las cabeceras de identidad enviadas por el cliente y no sirve para esta prueba. Consulta `docs/upgrade-2026-10-07.md` para la validación y los pendientes actuales.
